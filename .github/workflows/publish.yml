@@ -19,18 +19,18 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Check tag matches crate version
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "pulsemon") | .version')
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Crate version: $VERSION"
+          echo "Tag version: $TAG_VERSION"
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Version mismatch: tag $TAG_VERSION != Cargo.toml $VERSION"
+            exit 1
+          fi
+
       - name: Publish to crates.io
         run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Verify publish
-        run: |
-          VERSION=$(cargo metadata --format-version 1 | jq -r '.packages[0].version')
-          TAG_VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
-          echo "Published version: $VERSION"
-          echo "Tag version: $TAG_VERSION"
-          if [ "$VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Version mismatch: tag $TAG_VERSION != published $VERSION"
-            exit 1
-          fi
