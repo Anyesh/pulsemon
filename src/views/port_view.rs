@@ -218,12 +218,17 @@ fn cmp_addr(a: &str, b: &str) -> Ordering {
     }
 }
 
+/// `needle` must already be lowercase.
 fn matches(p: &PortInfo, needle: &str) -> bool {
+    let has = |field: &str| field.to_lowercase().contains(needle);
     needle.is_empty()
         || p.local_port.to_string().contains(needle)
-        || p.process_name.to_lowercase().contains(needle)
-        || p.local_addr.contains(needle)
-        || p.protocol.to_lowercase().contains(needle)
+        || p.pid.is_some_and(|pid| pid.to_string().contains(needle))
+        || has(&p.process_name)
+        || has(&p.local_addr)
+        || has(&p.remote_addr)
+        || has(&p.state)
+        || has(&p.protocol)
 }
 
 #[cfg(test)]

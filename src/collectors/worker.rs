@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -114,6 +115,10 @@ impl Worker {
             self.port_scanner
                 .as_mut()
                 .and_then(|scanner| scanner.scan().ok())
+                .map(|mut ports| {
+                    fill_process_names(&mut ports, self.processes.rows());
+                    ports
+                })
         } else {
             None
         };
@@ -129,6 +134,16 @@ impl Worker {
             ports,
             gpu: self.gpu_backends.iter().flat_map(|b| b.metrics()).collect(),
             cost: started.elapsed(),
+        }
+    }
+}
+
+/// Scanners that only know the owning pid get the name from the process table.
+fn fill_process_names(ports: &mut [PortInfo], processes: &[ProcessInfo]) {
+    let names: HashMap<u32, &str> = processes.iter().map(|p| (p.pid(), &*p.name)).collect();
+    for port in ports.iter_mut().filter(|p| p.process_name.is_empty()) {
+        if let Some(name) = port.pid.and_then(|pid| names.get(&pid)) {
+            port.process_name = name.to_string();
         }
     }
 }
