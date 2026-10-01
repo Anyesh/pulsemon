@@ -48,8 +48,28 @@ impl UserNames {
                 self.names.insert(uid.clone(), name.clone());
                 name
             }
-            None => Arc::from(uid.to_string()),
+            None => self.fallback(uid),
         }
+    }
+
+    /// Windows service and built-in accounts (SYSTEM, LOCAL SERVICE) are not in the
+    /// user list, but their SIDs still resolve through LookupAccountSidW.
+    #[cfg(windows)]
+    fn fallback(&mut self, uid: &Uid) -> Arc<str> {
+        let sid = uid.to_string();
+        match crate::collectors::inspect::windows::account_name(&sid) {
+            Some(name) => {
+                let name: Arc<str> = Arc::from(name);
+                self.names.insert(uid.clone(), name.clone());
+                name
+            }
+            None => Arc::from(sid),
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn fallback(&mut self, uid: &Uid) -> Arc<str> {
+        Arc::from(uid.to_string())
     }
 
     /// For ids that come from somewhere other than sysinfo, such as loginuid.

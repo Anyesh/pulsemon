@@ -1,5 +1,7 @@
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(windows)]
+pub mod windows;
 
 #[cfg(not(target_os = "linux"))]
 use std::time::Duration;
@@ -49,6 +51,8 @@ pub enum Extras {
     None,
     #[cfg(target_os = "linux")]
     Linux(Box<linux::Extras>),
+    #[cfg(windows)]
+    Windows(Box<windows::Extras>),
 }
 
 #[cfg(target_os = "linux")]
@@ -69,6 +73,10 @@ pub struct DetailCollector {
     /// Extras read many small files, so they refresh less often than the tick.
     #[cfg(target_os = "linux")]
     extras_cache: Option<(ProcKey, linux::Extras)>,
+    #[cfg(windows)]
+    extras_cache: Option<(ProcKey, windows::Extras)>,
+    #[cfg(windows)]
+    services: windows::ServiceMap,
 }
 
 impl DetailCollector {
@@ -79,8 +87,10 @@ impl DetailCollector {
             target: None,
             #[cfg(not(target_os = "linux"))]
             ports_cache: None,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             extras_cache: None,
+            #[cfg(windows)]
+            services: windows::ServiceMap::default(),
         }
     }
 
@@ -174,6 +184,20 @@ impl DetailCollector {
         #[cfg(not(target_os = "linux"))]
         {
             detail.ports = self.ports_by_scan(key.pid, scanner, now);
+        }
+        #[cfg(windows)]
+        {
+            let stale = match &self.extras_cache {
+                Some((cached, extras)) => *cached != key || windows::is_stale(extras),
+                None => true,
+            };
+            if stale {
+                let extras = windows::read_extras(key.pid, &mut self.services);
+                self.extras_cache = Some((key, extras));
+            }
+            if let Some((_, extras)) = &self.extras_cache {
+                detail.extras = Extras::Windows(Box::new(extras.clone()));
+            }
         }
         Some(detail)
     }

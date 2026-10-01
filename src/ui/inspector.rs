@@ -173,6 +173,8 @@ fn body_lines(view: &InspectorView) -> (Vec<Line<'static>>, Vec<u16>) {
             Extras::None => {}
             #[cfg(target_os = "linux")]
             Extras::Linux(e) => linux::tail(&mut out, e),
+            #[cfg(windows)]
+            Extras::Windows(e) => windows::tail(&mut out, e),
         }
         environment(&mut out, d, view.show_env);
     }
@@ -349,6 +351,52 @@ mod linux {
             match &e.tty {
                 Ok(Some(tty)) => vec![Span::styled(tty.clone(), theme::text_style())],
                 Ok(None) => vec![Span::styled("none", theme::dim_style())],
+                Err(m) => vec![missing_span(*m)],
+            },
+        );
+    }
+}
+
+#[cfg(windows)]
+mod windows {
+    use ratatui::text::Span;
+
+    use super::{field, missing_span, warn_style, Body};
+    use crate::collectors::inspect::windows::Extras;
+    use crate::theme;
+
+    pub fn tail(out: &mut Body, e: &Extras) {
+        out.section("Windows");
+        match &e.services {
+            Ok(services) if services.is_empty() => {
+                out.field("Services", vec![Span::styled("none", theme::dim_style())])
+            }
+            Ok(services) => {
+                for (i, svc) in services.iter().enumerate() {
+                    let label = if i == 0 { "Services" } else { "" };
+                    out.field(
+                        label,
+                        vec![
+                            Span::styled(svc.name.clone(), theme::text_style()),
+                            Span::styled(format!("  {}", svc.display), theme::dim_style()),
+                        ],
+                    );
+                }
+            }
+            Err(m) => out.field("Services", vec![missing_span(*m)]),
+        }
+        let mut integrity = field(&e.integrity);
+        if e.elevated == Ok(true) {
+            integrity.push(Span::styled("  elevated", warn_style()));
+        }
+        out.field("Integrity", integrity);
+        out.field(
+            "Session",
+            match &e.session {
+                Ok(s) => vec![
+                    Span::styled(s.id.to_string(), theme::text_style()),
+                    Span::styled(format!("  {}", s.kind), theme::dim_style()),
+                ],
                 Err(m) => vec![missing_span(*m)],
             },
         );
