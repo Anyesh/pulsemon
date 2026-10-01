@@ -11,7 +11,7 @@ use crate::theme;
 use crate::types::{format_bytes, ProcessSortBy};
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let procs = app.processes.rows();
+    let procs = &app.data.processes;
     let count = app.process_view.order.len();
 
     let arrow_up = " \u{25b2}";
@@ -55,7 +55,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
             let row = Row::new(vec![
                 Cell::from(Span::styled(p.pid().to_string(), theme::text_style())),
                 Cell::from(Span::styled(&*p.user, theme::dim_style())),
-                Cell::from(Span::styled(p.name.as_str(), theme::text_style())),
+                Cell::from(Span::styled(&*p.name, theme::text_style())),
                 Cell::from(Span::styled(
                     format!("{:.1}%", p.cpu_usage),
                     theme::text_style(),
@@ -66,7 +66,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
                     theme::dim_style(),
                 )),
                 Cell::from(Span::styled(p.status, theme::dim_style())),
-                Cell::from(Span::styled(p.command.as_str(), theme::dim_style())),
+                Cell::from(Span::styled(&*p.command, theme::dim_style())),
             ]);
             if i % 2 == 0 {
                 row

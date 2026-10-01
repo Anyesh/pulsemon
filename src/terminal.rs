@@ -42,5 +42,8 @@ fn install_panic_hook() {
     panic::set_hook(Box::new(move |info| {
         teardown();
         default_hook(info);
+        // A panic on the collector or input thread would otherwise leave the UI
+        // running on a terminal that has already been restored.
+        std::process::exit(101);
     }));
 }

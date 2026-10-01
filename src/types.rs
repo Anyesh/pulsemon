@@ -77,14 +77,16 @@ pub struct ProcKey {
     pub start_time: u64,
 }
 
+/// One row of the process table. The string fields are `Arc<str>` so that sending a
+/// snapshot from the collector thread copies pointers rather than strings.
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub key: ProcKey,
     pub parent: Option<u32>,
-    pub name: String,
-    pub name_lower: String,
-    pub command: String,
-    pub command_lower: String,
+    pub name: Arc<str>,
+    pub name_lower: Arc<str>,
+    pub command: Arc<str>,
+    pub command_lower: Arc<str>,
     pub user: Arc<str>,
     pub cpu_usage: f32,
     pub memory: u64,

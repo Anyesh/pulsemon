@@ -14,7 +14,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .border_type(BorderType::Rounded)
         .border_style(theme::border_style())
         .title(Span::styled(
-            format!(" CPU: {} ", app.system.cpu().cpu_name),
+            format!(" CPU: {} ", app.data.cpu.cpu_name),
             theme::title_style(),
         ));
     let inner = block.inner(area);
@@ -28,7 +28,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     .areas(inner);
 
     // Global CPU usage gauge
-    let cpu_usage = app.system.cpu().global_usage as f64;
+    let cpu_usage = app.data.cpu.global_usage as f64;
     let ratio = (cpu_usage / 100.0).clamp(0.0, 1.0);
 
     let gauge = Gauge::default()
@@ -49,7 +49,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(gauge, global_area);
 
     // CPU history sparkline
-    let cpu_data: Vec<u64> = app.system.cpu().history.iter().map(|v| *v as u64).collect();
+    let cpu_data: Vec<u64> = app.data.cpu.history.iter().map(|v| *v as u64).collect();
     let sparkline = Sparkline::default()
         .block(
             Block::bordered()
@@ -63,7 +63,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(sparkline, sparkline_area);
 
     // Per-core gauges
-    let core_count = app.system.cpu().per_core.len().min(32);
+    let core_count = app.data.cpu.per_core.len().min(32);
     if core_count == 0 {
         let msg = Paragraph::new("No per-core data available").style(theme::dim_style());
         frame.render_widget(msg, cores_area);
@@ -74,7 +74,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .border_type(BorderType::Rounded)
         .border_style(theme::border_style())
         .title(Span::styled(
-            format!(" Per-Core ({} cores) ", app.system.cpu().per_core.len()),
+            format!(" Per-Core ({} cores) ", app.data.cpu.per_core.len()),
             theme::title_style(),
         ));
     let core_inner = core_block.inner(cores_area);
@@ -86,14 +86,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .collect();
     let core_rows = Layout::vertical(constraints).split(core_inner);
 
-    for (i, &usage) in app
-        .system
-        .cpu()
-        .per_core
-        .iter()
-        .take(core_count)
-        .enumerate()
-    {
+    for (i, &usage) in app.data.cpu.per_core.iter().take(core_count).enumerate() {
         let u = usage as f64;
         let r = (u / 100.0).clamp(0.0, 1.0);
 

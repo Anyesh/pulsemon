@@ -6,10 +6,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
-use crate::collectors::gpu::{self, GpuBackend};
-use crate::collectors::ports::{self, PortScanner};
-use crate::collectors::process::ProcessCollector;
-use crate::collectors::system::SystemCollector;
+use crate::collectors::worker::{CollectorHandle, Request, Snapshot};
 use crate::config::Config;
 use crate::types::*;
 use crate::views::port_view::PortView;
@@ -82,13 +79,11 @@ pub struct App {
     pub view: View,
     pub input_mode: InputMode,
 
-    pub system: SystemCollector,
-    pub processes: ProcessCollector,
-    pub port_scanner: Option<Box<dyn PortScanner>>,
-    pub gpu_backends: Vec<Box<dyn GpuBackend>>,
-
+    pub collector: CollectorHandle,
+    refresh_in_flight: bool,
+    pub data: Snapshot,
+    /// Kept apart from `data` because most snapshots skip the port scan.
     pub ports: Vec<PortInfo>,
-    pub gpu_metrics: Vec<GpuMetrics>,
 
     pub process_view: ProcessView,
     pub port_view: PortView,
@@ -100,35 +95,21 @@ pub struct App {
     pub show_help: bool,
     pub tick_rate: Duration,
     pub status_message: Option<(String, Instant)>,
-    /// Wall time of the last refresh, kept only when `--debug-timing` is set.
+    /// Collector-thread time of the last refresh, kept only when `--debug-timing` is set.
     pub tick_cost: Option<Duration>,
     debug_timing: bool,
 }
 
 impl App {
-    pub fn new(config: &Config) -> Self {
-        let port_scanner = if config.no_ports {
-            None
-        } else {
-            Some(ports::create_scanner())
-        };
-
-        let gpu_backends = if config.no_gpu {
-            Vec::new()
-        } else {
-            gpu::detect_gpus()
-        };
-
+    pub fn new(config: &Config, collector: CollectorHandle) -> Self {
         let mut app = Self {
             running: true,
             view: View::Dashboard,
             input_mode: InputMode::Normal,
-            system: SystemCollector::new(),
-            processes: ProcessCollector::new(),
-            port_scanner,
-            gpu_backends,
+            collector,
+            refresh_in_flight: false,
+            data: Snapshot::default(),
             ports: Vec::new(),
-            gpu_metrics: Vec::new(),
             process_view: ProcessView::default(),
             port_view: PortView::default(),
             command_input: String::new(),
@@ -142,48 +123,44 @@ impl App {
             debug_timing: config.debug_timing,
         };
 
-        app.refresh_all();
+        app.request_refresh();
         app
     }
 
-    pub fn refresh_all(&mut self) {
-        let started = Instant::now();
-        self.system.refresh();
-        self.processes.refresh();
+    /// Asks the collector for fresh data unless a refresh is still running, so a
+    /// refresh slower than the tick rate cannot queue up behind itself.
+    pub fn request_refresh(&mut self) {
+        if self.refresh_in_flight {
+            return;
+        }
+        self.refresh_in_flight = true;
         // The full socket scan is only worth its cost while someone is looking at it.
-        if self.view == View::PortTable {
-            self.scan_ports();
-        }
-
-        for backend in &mut self.gpu_backends {
-            let _ = backend.refresh();
-        }
-        self.gpu_metrics = self.gpu_backends.iter().flat_map(|b| b.metrics()).collect();
-
-        self.rebuild_views();
-        if self.debug_timing {
-            self.tick_cost = Some(started.elapsed());
-        }
+        let ports = self.view == View::PortTable;
+        self.collector.send(Request::Refresh { ports });
     }
 
-    fn scan_ports(&mut self) {
-        if let Some(scanner) = &mut self.port_scanner {
-            if let Ok(ports) = scanner.scan() {
-                self.ports = ports;
-            }
+    pub fn apply_snapshot(&mut self, mut snapshot: Snapshot) {
+        self.refresh_in_flight = false;
+        if let Some(ports) = snapshot.ports.take() {
+            self.ports = ports;
         }
+        if self.debug_timing {
+            self.tick_cost = Some(snapshot.cost);
+        }
+        self.data = snapshot;
+        self.rebuild_views();
     }
 
     fn rebuild_views(&mut self) {
         self.process_view
-            .rebuild(self.processes.rows(), &self.filter_input);
+            .rebuild(&self.data.processes, &self.filter_input);
         self.port_view.rebuild(&self.ports, &self.filter_input);
     }
 
     pub fn selected_process(&self) -> Option<&ProcessInfo> {
         let idx = self.process_view.table_state.selected()?;
         let row = *self.process_view.order.get(idx)?;
-        self.processes.rows().get(row)
+        self.data.processes.get(row)
     }
 
     pub fn selected_port(&self) -> Option<&PortInfo> {
@@ -293,10 +270,10 @@ impl App {
                 self.set_status(format!("Sorting by: {:?}", self.port_view.sort_by));
             }
             Action::RequestKill => self.initiate_kill(),
-            Action::Kill(pid) => match self.processes.kill_process(pid) {
-                Ok(()) => self.set_status(format!("Killed PID {}", pid)),
-                Err(e) => self.set_status(format!("Failed: {}", e)),
-            },
+            Action::Kill(pid) => self.collector.send(Request::Kill {
+                pid,
+                label: "process".into(),
+            }),
             Action::KillPort(port) => self.kill_by_port(port),
             Action::AdjustRate(delta_ms) => {
                 let ms = self.tick_rate.as_millis() as i64 + delta_ms;
@@ -321,8 +298,9 @@ impl App {
         let entering_ports = view == View::PortTable && self.view != View::PortTable;
         self.view = view;
         if entering_ports {
-            self.scan_ports();
-            self.rebuild_views();
+            // Ports are not scanned while hidden, so fetch them now instead of
+            // showing a stale list until the next tick.
+            self.collector.send(Request::Refresh { ports: true });
         }
     }
 
@@ -391,11 +369,8 @@ impl App {
 
     fn handle_confirm_kill(&mut self, key: KeyEvent) {
         if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
-            if let Some((pid, name)) = self.confirm_kill.take() {
-                match self.processes.kill_process(pid) {
-                    Ok(()) => self.set_status(format!("Killed {} (PID {})", name, pid)),
-                    Err(e) => self.set_status(format!("Failed to kill {}: {}", name, e)),
-                }
+            if let Some((pid, label)) = self.confirm_kill.take() {
+                self.collector.send(Request::Kill { pid, label });
             }
         }
         self.confirm_kill = None;
@@ -409,10 +384,10 @@ impl App {
             .find(|p| p.local_port == port)
             .and_then(|p| p.pid);
         match pid {
-            Some(pid) => match self.processes.kill_process(pid) {
-                Ok(()) => self.set_status(format!("Killed process on port {}", port)),
-                Err(e) => self.set_status(format!("Failed: {}", e)),
-            },
+            Some(pid) => self.collector.send(Request::Kill {
+                pid,
+                label: format!("process on port {port}"),
+            }),
             None => self.set_status(format!("No process found on port {}", port)),
         }
     }
@@ -421,7 +396,7 @@ impl App {
         let target = match self.view {
             View::ProcessTable => self
                 .selected_process()
-                .map(|p| Ok((p.pid(), p.name.clone()))),
+                .map(|p| Ok((p.pid(), p.name.to_string()))),
             View::PortTable => self.selected_port().map(|p| {
                 p.pid
                     .map(|pid| (pid, format!("port:{}", p.local_port)))

@@ -15,6 +15,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use app::App;
+use collectors::worker::CollectorHandle;
 use config::Config;
 use event::{AppEvent, EventHandler};
 use terminal::TerminalGuard;
@@ -26,8 +27,9 @@ fn main() -> Result<()> {
 }
 
 fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
-    let mut app = App::new(config);
     let events = EventHandler::new();
+    let collector = CollectorHandle::spawn(config, events.sender());
+    let mut app = App::new(config, collector);
     let mut last_tick = Instant::now();
     let mut dirty = true;
 
@@ -49,6 +51,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
             match event {
                 AppEvent::Key(key) => app.handle_key(key),
                 AppEvent::Resize => {}
+                AppEvent::Snapshot(snapshot) => app.apply_snapshot(*snapshot),
+                AppEvent::Notice(msg) => app.set_status(msg),
             }
             dirty = true;
             next = events.try_recv()?;
@@ -60,9 +64,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
 
         let now = Instant::now();
         if schedule::tick_due(now, last_tick, app.tick_rate) {
-            app.refresh_all();
+            app.request_refresh();
             last_tick = now;
-            dirty = true;
         }
         dirty |= app.expire_status(now);
     }

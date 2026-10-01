@@ -1,7 +1,7 @@
 use crate::types::PortInfo;
 use anyhow::Result;
 
-pub trait PortScanner {
+pub trait PortScanner: Send {
     fn scan(&mut self) -> Result<Vec<PortInfo>>;
 }
 

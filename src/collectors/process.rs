@@ -77,10 +77,10 @@ impl ProcessCollector {
                     let mut row = ProcessInfo {
                         key,
                         parent: None,
-                        name: String::new(),
-                        name_lower: String::new(),
-                        command: String::new(),
-                        command_lower: String::new(),
+                        name: Arc::from(""),
+                        name_lower: Arc::from(""),
+                        command: Arc::from(""),
+                        command_lower: Arc::from(""),
                         user: self.users.resolve(process.user_id(), now),
                         cpu_usage: 0.0,
                         memory: 0,
@@ -126,10 +126,12 @@ impl ProcessCollector {
 }
 
 fn set_identity(row: &mut ProcessInfo, process: &Process) {
-    row.name = process.name().to_string_lossy().into_owned();
-    row.name_lower = row.name.to_lowercase();
-    row.command = join_args(process.cmd());
-    row.command_lower = row.command.to_lowercase();
+    let name = process.name().to_string_lossy();
+    row.name_lower = Arc::from(name.to_lowercase());
+    row.name = Arc::from(name);
+    let command = join_args(process.cmd());
+    row.command_lower = Arc::from(command.to_lowercase());
+    row.command = Arc::from(command);
 }
 
 fn update_dynamic(row: &mut ProcessInfo, process: &Process, elapsed: Option<Duration>) {

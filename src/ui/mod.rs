@@ -85,7 +85,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let mut status_line = status_line;
     if let Some(cost) = app.tick_cost {
         status_line.push_span(Span::styled(
-            format!(" tick {:.1}ms", cost.as_secs_f64() * 1000.0),
+            format!(" collect {:.1}ms", cost.as_secs_f64() * 1000.0),
             Style::new().fg(theme::ORANGE_BRIGHT),
         ));
     }

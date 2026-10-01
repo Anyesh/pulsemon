@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.system.disks().is_empty() {
+    if app.data.disks.is_empty() {
         let msg = Paragraph::new("No disks detected").style(theme::dim_style());
         frame.render_widget(msg, inner);
         return;
@@ -26,13 +26,13 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Each disk gets 2 lines: label + gauge, plus 1 spacing line between disks
     let constraints: Vec<Constraint> = app
-        .system
-        .disks()
+        .data
+        .disks
         .iter()
         .enumerate()
         .flat_map(|(i, _)| {
             let mut v = vec![Constraint::Length(1), Constraint::Length(1)];
-            if i < app.system.disks().len() - 1 {
+            if i < app.data.disks.len() - 1 {
                 v.push(Constraint::Length(1)); // spacing
             }
             v
@@ -42,7 +42,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let rows = Layout::vertical(constraints).split(inner);
 
     let mut row_idx = 0;
-    for (i, disk) in app.system.disks().iter().enumerate() {
+    for (i, disk) in app.data.disks.iter().enumerate() {
         if row_idx + 1 >= rows.len() {
             break;
         }
@@ -81,10 +81,6 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(gauge, rows[row_idx + 1]);
 
         // Advance past label + gauge + spacing
-        row_idx += if i < app.system.disks().len() - 1 {
-            3
-        } else {
-            2
-        };
+        row_idx += if i < app.data.disks.len() - 1 { 3 } else { 2 };
     }
 }

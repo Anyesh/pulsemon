@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.gpu_metrics.is_empty() {
+    if app.data.gpu.is_empty() {
         let msg = Paragraph::new("No supported GPU detected").style(theme::dim_style());
         frame.render_widget(msg, inner);
         return;
@@ -26,11 +26,12 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Each GPU section: name(1) + util gauge(1) + vram gauge(1) + info(3) + spacing(1) = 7 lines
     let constraints: Vec<Constraint> = app
-        .gpu_metrics
+        .data
+        .gpu
         .iter()
         .enumerate()
         .map(|(i, _)| {
-            if i < app.gpu_metrics.len() - 1 {
+            if i < app.data.gpu.len() - 1 {
                 Constraint::Length(8)
             } else {
                 Constraint::Length(7)
@@ -40,7 +41,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .collect();
     let gpu_sections = Layout::vertical(constraints).split(inner);
 
-    for (i, gpu) in app.gpu_metrics.iter().enumerate() {
+    for (i, gpu) in app.data.gpu.iter().enumerate() {
         if i >= gpu_sections.len() - 1 {
             break;
         }
