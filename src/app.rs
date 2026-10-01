@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::widgets::TableState;
@@ -9,6 +9,8 @@ use crate::collectors::process::ProcessCollector;
 use crate::collectors::system::SystemCollector;
 use crate::config::Config;
 use crate::types::*;
+
+const STATUS_TTL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -114,7 +116,7 @@ pub struct App {
     pub tick_rate: Duration,
 
     // Status message
-    pub status_message: Option<(String, std::time::Instant)>,
+    pub status_message: Option<(String, Instant)>,
 }
 
 impl App {
@@ -648,16 +650,25 @@ impl App {
     }
 
     pub fn set_status(&mut self, msg: String) {
-        self.status_message = Some((msg, std::time::Instant::now()));
+        self.status_message = Some((msg, Instant::now() + STATUS_TTL));
     }
 
     pub fn status_text(&self) -> Option<&str> {
-        self.status_message.as_ref().and_then(|(msg, when)| {
-            if when.elapsed().as_secs() < 5 {
-                Some(msg.as_str())
-            } else {
-                None
+        self.status_message.as_ref().map(|(msg, _)| msg.as_str())
+    }
+
+    pub fn status_deadline(&self) -> Option<Instant> {
+        self.status_message.as_ref().map(|(_, until)| *until)
+    }
+
+    /// Returns true when a status message was cleared, so the caller knows to redraw.
+    pub fn expire_status(&mut self, now: Instant) -> bool {
+        match self.status_deadline() {
+            Some(until) if now >= until => {
+                self.status_message = None;
+                true
             }
-        })
+            _ => false,
+        }
     }
 }
