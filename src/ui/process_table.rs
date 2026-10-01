@@ -1,58 +1,88 @@
 use ratatui::{
     layout::{Constraint, Rect},
-    style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Cell, Row, Table},
+    widgets::{Block, BorderType, Cell, Row},
     Frame,
 };
 
+use super::table::{self, Column};
 use crate::app::App;
 use crate::theme;
-use crate::types::{format_bytes, ProcessSortBy};
+use crate::types::format_bytes;
+use crate::views::process_view::ProcessColumn;
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
+pub const COLUMNS: [Column<ProcessColumn>; 8] = [
+    Column {
+        label: "PID",
+        width: Constraint::Length(7),
+        key: ProcessColumn::Pid,
+    },
+    Column {
+        label: "User",
+        width: Constraint::Length(10),
+        key: ProcessColumn::User,
+    },
+    Column {
+        label: "Name",
+        width: Constraint::Length(20),
+        key: ProcessColumn::Name,
+    },
+    Column {
+        label: "CPU%",
+        width: Constraint::Length(7),
+        key: ProcessColumn::Cpu,
+    },
+    Column {
+        label: "Memory",
+        width: Constraint::Length(10),
+        key: ProcessColumn::Memory,
+    },
+    Column {
+        label: "Disk I/O",
+        width: Constraint::Length(11),
+        key: ProcessColumn::Disk,
+    },
+    Column {
+        label: "Status",
+        width: Constraint::Length(9),
+        key: ProcessColumn::Status,
+    },
+    Column {
+        label: "Command",
+        width: Constraint::Fill(1),
+        key: ProcessColumn::Command,
+    },
+];
+
+/// Returns the table's inner area.
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
+    let view = &mut app.process_view;
     let procs = &app.data.processes;
-    let count = app.process_view.order.len();
+    let count = view.order.len();
 
-    let arrow_up = " \u{25b2}";
-    let arrow_down = " \u{25bc}";
+    let title = Line::from(vec![
+        Span::styled(" Processes ", theme::title_style()),
+        Span::styled(format!("({}) ", count), theme::dim_style()),
+    ]);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme::border_style())
+        .title(title)
+        .title_bottom(super::filter_title(&view.filter));
 
-    let make_header = |label: &str, active: bool| -> Cell<'static> {
-        if active {
-            let arrow = if app.process_view.sort_asc {
-                arrow_up
-            } else {
-                arrow_down
-            };
-            Cell::from(Line::from(vec![
-                Span::styled(label.to_string(), theme::header_style()),
-                Span::styled(arrow.to_string(), Style::new().fg(theme::ORANGE_BRIGHT)),
-            ]))
-        } else {
-            Cell::from(Span::styled(label.to_string(), theme::header_style()))
-        }
-    };
-
-    let header = Row::new(vec![
-        make_header("PID", app.process_view.sort_by == ProcessSortBy::Pid),
-        Cell::from(Span::styled("User", theme::header_style())),
-        make_header("Name", app.process_view.sort_by == ProcessSortBy::Name),
-        make_header("CPU%", app.process_view.sort_by == ProcessSortBy::Cpu),
-        make_header("Memory", app.process_view.sort_by == ProcessSortBy::Memory),
-        Cell::from(Span::styled("Disk I/O", theme::header_style())),
-        Cell::from(Span::styled("Status", theme::header_style())),
-        Cell::from(Span::styled("Command", theme::header_style())),
-    ])
-    .height(1);
-
-    let rows: Vec<Row> = app
-        .process_view
-        .order
-        .iter()
-        .map(|&i| &procs[i])
-        .enumerate()
-        .map(|(i, p)| {
-            let row = Row::new(vec![
+    let order = &view.order;
+    table::render(
+        frame,
+        area,
+        block,
+        &COLUMNS,
+        view.sort,
+        &mut view.cursor,
+        count,
+        view.selected.is_some(),
+        |pos| {
+            let p = &procs[order[pos]];
+            Row::new([
                 Cell::from(Span::styled(p.pid().to_string(), theme::text_style())),
                 Cell::from(Span::styled(&*p.user, theme::dim_style())),
                 Cell::from(Span::styled(&*p.name, theme::text_style())),
@@ -67,54 +97,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
                 )),
                 Cell::from(Span::styled(p.status, theme::dim_style())),
                 Cell::from(Span::styled(&*p.command, theme::dim_style())),
-            ]);
-            if i % 2 == 0 {
-                row
-            } else {
-                row.style(Style::new().bg(theme::BG_ALT_ROW))
-            }
-        })
-        .collect();
-
-    let title = Line::from(vec![
-        Span::styled(" Processes ", theme::title_style()),
-        Span::styled(format!("({}) ", count), theme::dim_style()),
-    ]);
-
-    let bottom_title = if !app.filter_input.is_empty() {
-        Line::from(vec![
-            Span::styled(" filter: ", theme::dim_style()),
-            Span::styled(
-                format!("{} ", app.filter_input),
-                Style::new().fg(theme::ORANGE),
-            ),
-        ])
-    } else {
-        Line::default()
-    };
-
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(theme::border_style())
-        .title(title)
-        .title_bottom(bottom_title);
-
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(7),
-            Constraint::Length(10),
-            Constraint::Length(22),
-            Constraint::Length(8),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Length(10),
-            Constraint::Fill(1),
-        ],
+            ])
+        },
     )
-    .header(header)
-    .block(block)
-    .row_highlight_style(theme::selected_style());
-
-    frame.render_stateful_widget(table, area, &mut app.process_view.table_state);
 }

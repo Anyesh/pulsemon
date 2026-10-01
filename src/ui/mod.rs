@@ -7,6 +7,7 @@ mod help;
 mod memory_detail;
 mod port_table;
 mod process_table;
+mod table;
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -49,8 +50,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         View::MemoryDetail => memory_detail::render(frame, app, content_area),
         View::DiskDetail => disk_detail::render(frame, app, content_area),
         View::GpuDetail => gpu_detail::render(frame, app, content_area),
-        View::ProcessTable => process_table::render(frame, app, content_area),
-        View::PortTable => port_table::render(frame, app, content_area),
+        View::ProcessTable => {
+            process_table::render(frame, app, content_area);
+        }
+        View::PortTable => {
+            port_table::render(frame, app, content_area);
+        }
     }
 
     // Status bar
@@ -128,7 +133,7 @@ fn render_filter_bar(frame: &mut Frame, app: &App) {
 
     let input = Paragraph::new(Line::from(vec![
         Span::styled("/", theme::dim_style()),
-        Span::styled(app.filter_input.clone(), Style::new().fg(theme::TEXT)),
+        Span::styled(app.active_filter(), Style::new().fg(theme::TEXT)),
     ]))
     .block(block);
 
@@ -180,4 +185,15 @@ fn render_kill_confirm(frame: &mut Frame, app: &App) {
         let popup = Paragraph::new(text).block(block);
         frame.render_widget(popup, popup_area);
     }
+}
+
+fn filter_title(filter: &str) -> Line<'_> {
+    if filter.is_empty() {
+        return Line::default();
+    }
+    Line::from(vec![
+        Span::styled(" filter: ", theme::dim_style()),
+        Span::styled(filter, Style::new().fg(theme::ORANGE)),
+        Span::raw(" "),
+    ])
 }

@@ -101,15 +101,6 @@ impl ProcessInfo {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum ProcessSortBy {
-    Pid,
-    Name,
-    #[default]
-    Cpu,
-    Memory,
-}
-
 // ---------------------------------------------------------------------------
 // Port / Network
 // ---------------------------------------------------------------------------
@@ -124,15 +115,6 @@ pub struct PortInfo {
     pub state: String,
     pub pid: Option<u32>,
     pub process_name: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum PortSortBy {
-    #[default]
-    Port,
-    Protocol,
-    Pid,
-    State,
 }
 
 // ---------------------------------------------------------------------------
@@ -203,11 +185,5 @@ mod tests {
         let mem = MemoryMetrics::default();
         assert_eq!(mem.history.capacity(), HISTORY_CAPACITY);
         assert!(mem.history.is_empty());
-    }
-
-    #[test]
-    fn test_sort_defaults() {
-        assert_eq!(ProcessSortBy::default(), ProcessSortBy::Cpu);
-        assert_eq!(PortSortBy::default(), PortSortBy::Port);
     }
 }

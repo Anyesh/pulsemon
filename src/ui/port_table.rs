@@ -1,122 +1,98 @@
 use ratatui::{
     layout::{Constraint, Rect},
-    style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Cell, Row, Table},
+    widgets::{Block, BorderType, Cell, Row},
     Frame,
 };
 
+use super::table::{self, Column};
 use crate::app::App;
 use crate::theme;
-use crate::types::PortSortBy;
+use crate::views::port_view::PortColumn;
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let count = app.port_view.order.len();
+pub const COLUMNS: [Column<PortColumn>; 7] = [
+    Column {
+        label: "Proto",
+        width: Constraint::Length(7),
+        key: PortColumn::Protocol,
+    },
+    Column {
+        label: "Local Address",
+        width: Constraint::Fill(2),
+        key: PortColumn::Local,
+    },
+    Column {
+        label: "Port",
+        width: Constraint::Length(7),
+        key: PortColumn::Port,
+    },
+    Column {
+        label: "Remote",
+        width: Constraint::Fill(2),
+        key: PortColumn::Remote,
+    },
+    Column {
+        label: "State",
+        width: Constraint::Length(12),
+        key: PortColumn::State,
+    },
+    Column {
+        label: "PID",
+        width: Constraint::Length(8),
+        key: PortColumn::Pid,
+    },
+    Column {
+        label: "Process",
+        width: Constraint::Fill(1),
+        key: PortColumn::Process,
+    },
+];
 
-    let arrow_up = " \u{25b2}";
-    let arrow_down = " \u{25bc}";
-
-    let make_header = |label: &str, active: bool| -> Cell<'static> {
-        if active {
-            let arrow = if app.port_view.sort_asc {
-                arrow_up
-            } else {
-                arrow_down
-            };
-            Cell::from(Line::from(vec![
-                Span::styled(label.to_string(), theme::header_style()),
-                Span::styled(arrow.to_string(), Style::new().fg(theme::ORANGE_BRIGHT)),
-            ]))
-        } else {
-            Cell::from(Span::styled(label.to_string(), theme::header_style()))
-        }
-    };
-
-    let header = Row::new(vec![
-        make_header("Protocol", app.port_view.sort_by == PortSortBy::Protocol),
-        Cell::from(Span::styled("Local Address", theme::header_style())),
-        make_header("Port", app.port_view.sort_by == PortSortBy::Port),
-        Cell::from(Span::styled("Remote Address", theme::header_style())),
-        make_header("State", app.port_view.sort_by == PortSortBy::State),
-        make_header("PID", app.port_view.sort_by == PortSortBy::Pid),
-        Cell::from(Span::styled("Process", theme::header_style())),
-    ])
-    .height(1);
-
-    let rows: Vec<Row> = app
-        .port_view
-        .order
-        .iter()
-        .map(|&i| &app.ports[i])
-        .enumerate()
-        .map(|(i, p)| {
-            let row = Row::new(vec![
-                Cell::from(Span::styled(p.protocol.clone(), theme::text_style())),
-                Cell::from(Span::styled(p.local_addr.clone(), theme::text_style())),
-                Cell::from(Span::styled(p.local_port.to_string(), theme::text_style())),
-                Cell::from(Span::styled(
-                    if p.remote_port == 0 {
-                        p.remote_addr.clone()
-                    } else {
-                        format!("{}:{}", p.remote_addr, p.remote_port)
-                    },
-                    theme::dim_style(),
-                )),
-                Cell::from(Span::styled(p.state.clone(), theme::text_style())),
-                Cell::from(Span::styled(
-                    p.pid
-                        .map(|pid| pid.to_string())
-                        .unwrap_or_else(|| "-".into()),
-                    theme::dim_style(),
-                )),
-                Cell::from(Span::styled(p.process_name.clone(), theme::text_style())),
-            ]);
-            if i % 2 == 0 {
-                row
-            } else {
-                row.style(Style::new().bg(theme::BG_ALT_ROW))
-            }
-        })
-        .collect();
+/// Returns the table's inner area.
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
+    let view = &mut app.port_view;
+    let ports = &app.ports;
+    let count = view.order.len();
 
     let title = Line::from(vec![
         Span::styled(" Ports ", theme::title_style()),
         Span::styled(format!("({}) ", count), theme::dim_style()),
     ]);
-
-    let bottom_title = if !app.filter_input.is_empty() {
-        Line::from(vec![
-            Span::styled(" filter: ", theme::dim_style()),
-            Span::styled(
-                format!("{} ", app.filter_input),
-                Style::new().fg(theme::ORANGE),
-            ),
-        ])
-    } else {
-        Line::default()
-    };
-
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme::border_style())
         .title(title)
-        .title_bottom(bottom_title);
+        .title_bottom(super::filter_title(&view.filter));
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(9),
-            Constraint::Length(18),
-            Constraint::Length(7),
-            Constraint::Length(18),
-            Constraint::Length(13),
-            Constraint::Length(8),
-            Constraint::Fill(1),
-        ],
+    let order = &view.order;
+    table::render(
+        frame,
+        area,
+        block,
+        &COLUMNS,
+        view.sort,
+        &mut view.cursor,
+        count,
+        view.selected.is_some(),
+        |pos| {
+            let p = &ports[order[pos]];
+            let remote = if p.remote_port == 0 {
+                p.remote_addr.clone()
+            } else {
+                format!("{}:{}", p.remote_addr, p.remote_port)
+            };
+            Row::new([
+                Cell::from(Span::styled(p.protocol.as_str(), theme::text_style())),
+                Cell::from(Span::styled(p.local_addr.as_str(), theme::text_style())),
+                Cell::from(Span::styled(p.local_port.to_string(), theme::text_style())),
+                Cell::from(Span::styled(remote, theme::dim_style())),
+                Cell::from(Span::styled(p.state.as_str(), theme::text_style())),
+                Cell::from(Span::styled(
+                    p.pid.map_or_else(|| "-".to_string(), |pid| pid.to_string()),
+                    theme::dim_style(),
+                )),
+                Cell::from(Span::styled(p.process_name.as_str(), theme::text_style())),
+            ])
+        },
     )
-    .header(header)
-    .block(block)
-    .row_highlight_style(theme::selected_style());
-
-    frame.render_stateful_widget(table, area, &mut app.port_view.table_state);
 }

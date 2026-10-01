@@ -1,5 +1,6 @@
 use super::View;
-use crate::types::{PortSortBy, ProcessSortBy};
+use crate::views::port_view::PortColumn;
+use crate::views::process_view::ProcessColumn;
 
 /// Every user intent, whatever its source (key, mouse or command palette), resolves to
 /// one of these so each behaviour has a single implementation in `App::apply`.
@@ -17,8 +18,8 @@ pub enum Action {
     SelectLast,
     CycleSort,
     ToggleSortDir,
-    SortProcesses(ProcessSortBy),
-    SortPorts(PortSortBy),
+    SortProcesses(ProcessColumn),
+    SortPorts(PortColumn),
     RequestKill,
     Kill(u32),
     KillPort(u16),

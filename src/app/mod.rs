@@ -11,7 +11,6 @@ use crate::config::Config;
 use crate::types::*;
 use crate::views::port_view::PortView;
 use crate::views::process_view::ProcessView;
-use crate::views::{move_selection, select_last};
 use action::Action;
 
 const STATUS_TTL: Duration = Duration::from_secs(5);
@@ -90,7 +89,6 @@ pub struct App {
 
     pub command_input: String,
     pub command_error: Option<String>,
-    pub filter_input: String,
     pub confirm_kill: Option<(u32, String)>,
     pub show_help: bool,
     pub tick_rate: Duration,
@@ -114,7 +112,6 @@ impl App {
             port_view: PortView::default(),
             command_input: String::new(),
             command_error: None,
-            filter_input: String::new(),
             confirm_kill: None,
             show_help: false,
             tick_rate: Duration::from_millis(config.rate),
@@ -152,20 +149,47 @@ impl App {
     }
 
     fn rebuild_views(&mut self) {
-        self.process_view
-            .rebuild(&self.data.processes, &self.filter_input);
-        self.port_view.rebuild(&self.ports, &self.filter_input);
+        self.process_view.rebuild(&self.data.processes);
+        self.port_view.rebuild(&self.ports);
+    }
+
+    /// The table that table-level actions (move, sort, filter) apply to.
+    fn table(&self) -> Option<Table> {
+        match self.view {
+            View::ProcessTable => Some(Table::Processes),
+            View::PortTable => Some(Table::Ports),
+            _ => None,
+        }
+    }
+
+    /// Filtering needs a table; from views without one it targets processes.
+    fn filter_table(&self) -> Table {
+        self.table().unwrap_or(Table::Processes)
+    }
+
+    pub fn active_filter(&self) -> &str {
+        match self.filter_table() {
+            Table::Processes => &self.process_view.filter,
+            Table::Ports => &self.port_view.filter,
+        }
+    }
+
+    fn active_filter_mut(&mut self) -> &mut String {
+        match self.filter_table() {
+            Table::Processes => &mut self.process_view.filter,
+            Table::Ports => &mut self.port_view.filter,
+        }
     }
 
     pub fn selected_process(&self) -> Option<&ProcessInfo> {
-        let idx = self.process_view.table_state.selected()?;
-        let row = *self.process_view.order.get(idx)?;
-        self.data.processes.get(row)
+        let view = &self.process_view;
+        let key = view.selected?;
+        let row = &self.data.processes[*view.order.get(view.cursor.cursor)?];
+        (row.key == key).then_some(row)
     }
 
     pub fn selected_port(&self) -> Option<&PortInfo> {
-        let idx = self.port_view.table_state.selected()?;
-        self.ports.get(*self.port_view.order.get(idx)?)
+        self.port_view.selected(&self.ports)
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -191,13 +215,15 @@ impl App {
     }
 
     pub fn apply(&mut self, action: Action) {
+        let resorted = sort_target(&action, self.table());
         match action {
             Action::Quit => self.running = false,
             Action::Back => {
-                if self.view != View::Dashboard {
-                    self.view = View::Dashboard;
-                    self.filter_input.clear();
+                if self.table().is_some() && !self.active_filter().is_empty() {
+                    self.active_filter_mut().clear();
                     self.rebuild_views();
+                } else if self.view != View::Dashboard {
+                    self.view = View::Dashboard;
                 } else {
                     self.running = false;
                 }
@@ -209,66 +235,37 @@ impl App {
                 self.command_error = None;
             }
             Action::OpenFilter => {
+                if self.table().is_none() {
+                    self.switch_view(View::ProcessTable);
+                }
                 self.input_mode = InputMode::Filter;
-                self.filter_input.clear();
+                self.active_filter_mut().clear();
                 self.rebuild_views();
             }
             Action::SwitchView(view) => self.switch_view(view),
             Action::CycleView(step) => {
                 let idx = (self.view.index() + VIEW_COUNT).wrapping_add_signed(step as isize);
                 self.switch_view(View::from_index(idx % VIEW_COUNT));
-                self.filter_input.clear();
-                self.rebuild_views();
             }
-            Action::MoveSelection(delta) => self.move_selection(delta),
-            Action::SelectFirst => match self.view {
-                View::ProcessTable => self.process_view.table_state.select(Some(0)),
-                View::PortTable => self.port_view.table_state.select(Some(0)),
-                _ => {}
+            Action::MoveSelection(delta) => self.move_selection(delta as i64),
+            Action::SelectFirst => self.select_index(0),
+            Action::SelectLast => self.select_index(usize::MAX),
+            Action::CycleSort => match self.table() {
+                Some(Table::Processes) => self.process_view.cycle_sort(),
+                Some(Table::Ports) => self.port_view.cycle_sort(),
+                None => return,
             },
-            Action::SelectLast => match self.view {
-                View::ProcessTable => {
-                    let len = self.process_view.order.len();
-                    select_last(&mut self.process_view.table_state, len);
+            Action::ToggleSortDir => match self.table() {
+                Some(Table::Processes) => {
+                    self.process_view.sort.ascending = !self.process_view.sort.ascending
                 }
-                View::PortTable => {
-                    let len = self.port_view.order.len();
-                    select_last(&mut self.port_view.table_state, len);
+                Some(Table::Ports) => {
+                    self.port_view.sort.ascending = !self.port_view.sort.ascending
                 }
-                _ => {}
+                None => return,
             },
-            Action::CycleSort => match self.view {
-                View::ProcessTable => {
-                    self.process_view.cycle_sort();
-                    self.resort_processes();
-                }
-                View::PortTable => {
-                    self.port_view.cycle_sort();
-                    self.rebuild_views();
-                }
-                _ => {}
-            },
-            Action::ToggleSortDir => match self.view {
-                View::ProcessTable => {
-                    self.process_view.sort_asc = !self.process_view.sort_asc;
-                    self.resort_processes();
-                }
-                View::PortTable => {
-                    self.port_view.sort_asc = !self.port_view.sort_asc;
-                    self.rebuild_views();
-                }
-                _ => {}
-            },
-            Action::SortProcesses(col) => {
-                self.process_view.sort_by = col;
-                self.rebuild_views();
-                self.set_status(format!("Sorting by: {:?}", self.process_view.sort_by));
-            }
-            Action::SortPorts(col) => {
-                self.port_view.sort_by = col;
-                self.rebuild_views();
-                self.set_status(format!("Sorting by: {:?}", self.port_view.sort_by));
-            }
+            Action::SortProcesses(col) => self.process_view.set_sort_column(col),
+            Action::SortPorts(col) => self.port_view.set_sort_column(col),
             Action::RequestKill => self.initiate_kill(),
             Action::Kill(pid) => self.collector.send(Request::Kill {
                 pid,
@@ -287,10 +284,17 @@ impl App {
                 self.set_status(format!("Refresh rate: {}ms", ms));
             }
             Action::SetFilter(filter) => {
-                self.filter_input = filter;
+                self.set_status(format!("Filter: {}", filter));
+                *self.active_filter_mut() = filter;
                 self.rebuild_views();
-                self.set_status(format!("Filter: {}", self.filter_input));
             }
+        }
+        if let Some(table) = resorted {
+            self.rebuild_views();
+            self.set_status(match table {
+                Table::Processes => self.process_view.sort_label(),
+                Table::Ports => self.port_view.sort_label(),
+            });
         }
     }
 
@@ -304,22 +308,19 @@ impl App {
         }
     }
 
-    fn resort_processes(&mut self) {
-        self.rebuild_views();
-        self.set_status(self.process_view.sort_label());
+    fn select_index(&mut self, index: usize) {
+        match self.table() {
+            Some(Table::Processes) => self.process_view.select_index(&self.data.processes, index),
+            Some(Table::Ports) => self.port_view.select_index(&self.ports, index),
+            None => {}
+        }
     }
 
-    fn move_selection(&mut self, delta: i32) {
-        match self.view {
-            View::ProcessTable => {
-                let len = self.process_view.order.len();
-                move_selection(&mut self.process_view.table_state, len, delta);
-            }
-            View::PortTable => {
-                let len = self.port_view.order.len();
-                move_selection(&mut self.port_view.table_state, len, delta);
-            }
-            _ => {}
+    fn move_selection(&mut self, delta: i64) {
+        match self.table() {
+            Some(Table::Processes) => self.process_view.move_by(&self.data.processes, delta),
+            Some(Table::Ports) => self.port_view.move_by(&self.ports, delta),
+            None => {}
         }
     }
 
@@ -333,7 +334,7 @@ impl App {
             KeyCode::Enter => {
                 self.input_mode = InputMode::Normal;
                 let line = std::mem::take(&mut self.command_input);
-                match command::parse(&line) {
+                match command::parse(&line, self.table() == Some(Table::Ports)) {
                     Ok(Some(action)) => self.apply(action),
                     Ok(None) => {}
                     Err(msg) => self.set_status(msg),
@@ -355,13 +356,13 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
-                self.filter_input.clear();
+                self.active_filter_mut().clear();
             }
             KeyCode::Enter => self.input_mode = InputMode::Normal,
             KeyCode::Backspace => {
-                self.filter_input.pop();
+                self.active_filter_mut().pop();
             }
-            KeyCode::Char(c) => self.filter_input.push(c),
+            KeyCode::Char(c) => self.active_filter_mut().push(c),
             _ => return,
         }
         self.rebuild_views();
@@ -435,5 +436,22 @@ impl App {
             }
             _ => false,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Table {
+    Processes,
+    Ports,
+}
+
+/// Which table a sort action reorders, if any; those all need a rebuild and a status
+/// line naming the new order.
+fn sort_target(action: &Action, current: Option<Table>) -> Option<Table> {
+    match action {
+        Action::SortProcesses(_) => Some(Table::Processes),
+        Action::SortPorts(_) => Some(Table::Ports),
+        Action::CycleSort | Action::ToggleSortDir => current,
+        _ => None,
     }
 }
