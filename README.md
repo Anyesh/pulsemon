@@ -6,7 +6,7 @@ Monitors CPU, memory, disk, GPU, processes and ports, sorts every table column, 
 
 ## Install
 
-**Download a binary** from [Releases](https://github.com/aaratisharma-star/pulsemoon/releases) — pick your platform, run it.
+**Download a binary** from [Releases](https://github.com/Anyesh/pulsemon/releases): pick your platform and run it.
 
 **Or build from source:**
 

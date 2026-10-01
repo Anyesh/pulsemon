@@ -4,9 +4,9 @@ version = "0.2.0"
 edition = "2021"
 description = "Cross-platform system monitor TUI — CPU, memory, disk, GPU, ports, process management"
 license = "MIT"
-repository = "https://github.com/Anyesh/pulsemoon"
-documentation = "https://github.com/Anyesh/pulsemoon#readme"
-homepage = "https://github.com/Anyesh/pulsemoon"
+repository = "https://github.com/Anyesh/pulsemon"
+documentation = "https://github.com/Anyesh/pulsemon#readme"
+homepage = "https://github.com/Anyesh/pulsemon"
 
 [dependencies]
 ratatui = "0.29"
