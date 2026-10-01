@@ -6,9 +6,11 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
+use crate::collectors::inspect::ProcessDetail;
 use crate::collectors::worker::{CollectorHandle, Request, Snapshot};
 use crate::config::Config;
 use crate::types::*;
+use crate::views::inspector::InspectorView;
 use crate::views::port_view::PortView;
 use crate::views::process_view::ProcessView;
 use action::Action;
@@ -86,6 +88,8 @@ pub struct App {
 
     pub process_view: ProcessView,
     pub port_view: PortView,
+    /// When set, the inspector replaces the current view's content.
+    pub inspector: Option<InspectorView>,
 
     pub command_input: String,
     pub command_error: Option<String>,
@@ -110,6 +114,7 @@ impl App {
             ports: Vec::new(),
             process_view: ProcessView::default(),
             port_view: PortView::default(),
+            inspector: None,
             command_input: String::new(),
             command_error: None,
             confirm_kill: None,
@@ -144,8 +149,21 @@ impl App {
         if self.debug_timing {
             self.tick_cost = Some(snapshot.cost);
         }
+        let detail = snapshot.detail.take();
         self.data = snapshot;
         self.rebuild_views();
+        if let Some(inspector) = &mut self.inspector {
+            inspector.update(&self.data.processes);
+        }
+        if let Some(detail) = detail {
+            self.apply_detail(*detail);
+        }
+    }
+
+    pub fn apply_detail(&mut self, detail: ProcessDetail) {
+        if let Some(inspector) = &mut self.inspector {
+            inspector.set_detail(detail);
+        }
     }
 
     fn rebuild_views(&mut self) {
@@ -207,7 +225,12 @@ impl App {
                 }
             }
             InputMode::Normal => {
-                if let Some(action) = keymap::normal(key) {
+                let action = if self.inspector.is_some() {
+                    keymap::inspector(key)
+                } else {
+                    keymap::normal(key)
+                };
+                if let Some(action) = action {
                     self.apply(action);
                 }
             }
@@ -235,6 +258,7 @@ impl App {
                 self.command_error = None;
             }
             Action::OpenFilter => {
+                self.close_inspector();
                 if self.table().is_none() {
                     self.switch_view(View::ProcessTable);
                 }
@@ -247,7 +271,10 @@ impl App {
                 let idx = (self.view.index() + VIEW_COUNT).wrapping_add_signed(step as isize);
                 self.switch_view(View::from_index(idx % VIEW_COUNT));
             }
-            Action::MoveSelection(delta) => self.move_selection(delta as i64),
+            Action::MoveSelection(delta) => match &mut self.inspector {
+                Some(inspector) => inspector.move_link(delta as i64),
+                None => self.move_selection(delta as i64),
+            },
             Action::SelectFirst => self.select_index(0),
             Action::SelectLast => self.select_index(usize::MAX),
             Action::CycleSort => match self.table() {
@@ -288,6 +315,46 @@ impl App {
                 *self.active_filter_mut() = filter;
                 self.rebuild_views();
             }
+            Action::OpenInspector => match self.selected_target() {
+                Some(key) => self.inspect(key),
+                None => self.set_status("Select a process to inspect".into()),
+            },
+            Action::InspectPid(pid) => match self.data.processes.iter().find(|p| p.pid() == pid) {
+                Some(row) => self.inspect(row.key),
+                None => self.set_status(format!("No process with PID {pid}")),
+            },
+            Action::CloseInspector => self.close_inspector(),
+            Action::InspectorBack => {
+                let rows = &self.data.processes;
+                let went_back = match &mut self.inspector {
+                    Some(inspector) => inspector.back(rows).then_some(inspector.key),
+                    None => None,
+                };
+                match went_back {
+                    Some(key) => self.collector.send(Request::Inspect(Some(key))),
+                    None => self.close_inspector(),
+                }
+            }
+            Action::InspectLink => {
+                let link = self
+                    .inspector
+                    .as_ref()
+                    .and_then(|i| i.link(i.link_cursor))
+                    .map(|l| l.key);
+                if let Some(key) = link {
+                    self.inspect(key);
+                }
+            }
+            Action::ToggleEnv => {
+                if let Some(inspector) = &mut self.inspector {
+                    inspector.show_env = !inspector.show_env;
+                }
+            }
+            Action::ScrollInspector(delta) => {
+                if let Some(inspector) = &mut self.inspector {
+                    inspector.scroll = inspector.scroll.saturating_add_signed(delta as i16);
+                }
+            }
         }
         if let Some(table) = resorted {
             self.rebuild_views();
@@ -298,7 +365,40 @@ impl App {
         }
     }
 
+    /// The process a table selection points at: the selected process, or the owner of
+    /// the selected port.
+    fn selected_target(&self) -> Option<ProcKey> {
+        match self.table()? {
+            Table::Processes => self.selected_process().map(|p| p.key),
+            Table::Ports => {
+                let pid = self.selected_port()?.pid?;
+                self.data
+                    .processes
+                    .iter()
+                    .find(|p| p.pid() == pid)
+                    .map(|p| p.key)
+            }
+        }
+    }
+
+    fn inspect(&mut self, key: ProcKey) {
+        let rows = &self.data.processes;
+        match &mut self.inspector {
+            Some(inspector) if inspector.key == key => return,
+            Some(inspector) => inspector.follow(key, rows),
+            None => self.inspector = Some(InspectorView::new(key, rows)),
+        }
+        self.collector.send(Request::Inspect(Some(key)));
+    }
+
+    fn close_inspector(&mut self) {
+        if self.inspector.take().is_some() {
+            self.collector.send(Request::Inspect(None));
+        }
+    }
+
     fn switch_view(&mut self, view: View) {
+        self.close_inspector();
         let entering_ports = view == View::PortTable && self.view != View::PortTable;
         self.view = view;
         if entering_ports {
@@ -394,6 +494,11 @@ impl App {
     }
 
     fn initiate_kill(&mut self) {
+        if let Some(row) = self.inspector.as_ref().and_then(|i| i.row.as_ref()) {
+            self.confirm_kill = Some((row.pid(), row.name.to_string()));
+            self.input_mode = InputMode::ConfirmKill;
+            return;
+        }
         let target = match self.view {
             View::ProcessTable => self
                 .selected_process()

@@ -4,16 +4,27 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::gpu::{self, GpuBackend};
+use super::inspect::{DetailCollector, ProcessDetail};
 use super::ports::{self, PortScanner};
 use super::process::ProcessCollector;
 use super::system::SystemCollector;
+use super::users::UserNames;
 use crate::config::Config;
 use crate::event::AppEvent;
-use crate::types::{CpuMetrics, DiskInfo, GpuMetrics, MemoryMetrics, PortInfo, ProcessInfo};
+use crate::types::{
+    CpuMetrics, DiskInfo, GpuMetrics, MemoryMetrics, PortInfo, ProcKey, ProcessInfo,
+};
 
 pub enum Request {
-    Refresh { ports: bool },
-    Kill { pid: u32, label: String },
+    Refresh {
+        ports: bool,
+    },
+    Kill {
+        pid: u32,
+        label: String,
+    },
+    /// Sets (or clears) the process whose detail rides along with every snapshot.
+    Inspect(Option<ProcKey>),
 }
 
 #[derive(Default)]
@@ -25,6 +36,7 @@ pub struct Snapshot {
     /// `None` when this refresh skipped the port scan; the previous list still holds.
     pub ports: Option<Vec<PortInfo>>,
     pub gpu: Vec<GpuMetrics>,
+    pub detail: Option<Box<ProcessDetail>>,
     pub cost: Duration,
 }
 
@@ -46,6 +58,8 @@ impl CollectorHandle {
                 let worker = Worker {
                     system: SystemCollector::new(),
                     processes: ProcessCollector::new(),
+                    users: UserNames::new(),
+                    detail: DetailCollector::new(),
                     port_scanner: (!no_ports).then(ports::create_scanner),
                     gpu_backends: if no_gpu {
                         Vec::new()
@@ -70,6 +84,8 @@ impl CollectorHandle {
 struct Worker {
     system: SystemCollector,
     processes: ProcessCollector,
+    users: UserNames,
+    detail: DetailCollector,
     port_scanner: Option<Box<dyn PortScanner>>,
     gpu_backends: Vec<Box<dyn GpuBackend>>,
     events: Sender<AppEvent>,
@@ -86,6 +102,13 @@ impl Worker {
                     Request::Refresh { ports } => {
                         refresh = Some(refresh.unwrap_or(false) | ports);
                         continue;
+                    }
+                    Request::Inspect(target) => {
+                        self.detail.set_target(target);
+                        match self.collect_detail() {
+                            Some(detail) => AppEvent::Detail(detail),
+                            None => continue,
+                        }
                     }
                     Request::Kill { pid, label } => {
                         AppEvent::Notice(match self.processes.kill_process(pid) {
@@ -107,10 +130,16 @@ impl Worker {
         }
     }
 
+    fn collect_detail(&mut self) -> Option<Box<ProcessDetail>> {
+        self.detail
+            .collect(&mut self.users, self.port_scanner.as_mut())
+            .map(Box::new)
+    }
+
     fn refresh(&mut self, scan_ports: bool) -> Snapshot {
         let started = Instant::now();
         self.system.refresh();
-        self.processes.refresh();
+        self.processes.refresh(&mut self.users);
         let ports = if scan_ports {
             self.port_scanner
                 .as_mut()
@@ -133,6 +162,7 @@ impl Worker {
             processes: self.processes.rows().to_vec(),
             ports,
             gpu: self.gpu_backends.iter().flat_map(|b| b.metrics()).collect(),
+            detail: self.collect_detail(),
             cost: started.elapsed(),
         }
     }

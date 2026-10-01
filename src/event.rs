@@ -5,12 +5,16 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use crossterm::event::{self, Event, KeyEvent};
 
+use crate::collectors::inspect::ProcessDetail;
 use crate::collectors::worker::Snapshot;
 
 pub enum AppEvent {
     Key(KeyEvent),
     Resize,
     Snapshot(Box<Snapshot>),
+    /// Inspector detail sent as soon as a new process is targeted, ahead of the next
+    /// snapshot.
+    Detail(Box<ProcessDetail>),
     /// A message for the status bar from the collector thread, such as a kill result.
     Notice(String),
 }

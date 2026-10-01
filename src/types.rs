@@ -159,6 +159,47 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// `YYYY-MM-DD HH:MM:SS UTC` for seconds since the Unix epoch.
+pub fn format_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02} UTC",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+/// Compact elapsed time: `45s`, `12m 05s`, `3h 02m`, `5d 04h`.
+pub fn format_elapsed(secs: u64) -> String {
+    let (d, h, m, s) = (
+        secs / 86_400,
+        secs % 86_400 / 3600,
+        secs % 3600 / 60,
+        secs % 60,
+    );
+    if d > 0 {
+        format!("{d}d {h:02}h")
+    } else if h > 0 {
+        format!("{h}h {m:02}m")
+    } else if m > 0 {
+        format!("{m}m {s:02}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +226,20 @@ mod tests {
         let mem = MemoryMetrics::default();
         assert_eq!(mem.history.capacity(), HISTORY_CAPACITY);
         assert!(mem.history.is_empty());
+    }
+
+    #[test]
+    fn formats_epoch_as_utc() {
+        assert_eq!(format_utc(0), "1970-01-01 00:00:00 UTC");
+        assert_eq!(format_utc(951_782_400), "2000-02-29 00:00:00 UTC");
+        assert_eq!(format_utc(1_790_000_000), "2026-09-21 14:13:20 UTC");
+    }
+
+    #[test]
+    fn formats_elapsed_compactly() {
+        assert_eq!(format_elapsed(45), "45s");
+        assert_eq!(format_elapsed(725), "12m 05s");
+        assert_eq!(format_elapsed(3 * 3600 + 120), "3h 02m");
+        assert_eq!(format_elapsed(5 * 86400 + 4 * 3600), "5d 04h");
     }
 }

@@ -7,7 +7,7 @@ use anyhow::Result;
 use super::PortScanner;
 use crate::types::PortInfo;
 
-const TABLES: [(&str, &str); 4] = [
+pub const TABLES: [(&str, &str); 4] = [
     ("tcp", "TCP"),
     ("tcp6", "TCP"),
     ("udp", "UDP"),
@@ -129,19 +129,22 @@ fn socket_owners() -> HashMap<u64, u32> {
         else {
             continue;
         };
-        owners.extend(pid_socket_inodes(pid).into_iter().map(|inode| (inode, pid)));
+        // Unreadable fd directories (other users' processes) just leave those
+        // sockets without an owner.
+        if let Ok(inodes) = pid_socket_inodes(pid) {
+            owners.extend(inodes.into_iter().map(|inode| (inode, pid)));
+        }
     }
     owners
 }
 
-pub fn pid_socket_inodes(pid: u32) -> Vec<u64> {
-    let Ok(fds) = fs::read_dir(format!("/proc/{pid}/fd")) else {
-        return Vec::new();
-    };
-    fds.flatten()
+pub fn pid_socket_inodes(pid: u32) -> std::io::Result<Vec<u64>> {
+    let fds = fs::read_dir(format!("/proc/{pid}/fd"))?;
+    Ok(fds
+        .flatten()
         .filter_map(|fd| fs::read_link(fd.path()).ok())
         .filter_map(|link| link.to_str().and_then(parse_socket_link))
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

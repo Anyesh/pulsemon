@@ -31,6 +31,10 @@ pub fn parse(line: &str, ports_first: bool) -> Result<Option<Action>, String> {
             Action::SetRate(ms)
         }
         "filter" => Action::SetFilter(parts[1..].join(" ")),
+        "inspect" => {
+            let arg = arg.ok_or("Usage: inspect <pid>")?;
+            Action::InspectPid(arg.parse().map_err(|_| "Invalid PID")?)
+        }
         "sort" => {
             let col = arg.ok_or("Usage: sort <column>")?;
             sort_action(&col.to_lowercase(), ports_first)
@@ -69,6 +73,7 @@ mod tests {
             Ok(Some(Action::KillPort(8080)))
         );
         assert_eq!(parse("rate 500", false), Ok(Some(Action::SetRate(500))));
+        assert_eq!(parse("inspect 7", false), Ok(Some(Action::InspectPid(7))));
         assert_eq!(
             parse("filter foo bar", false),
             Ok(Some(Action::SetFilter("foo bar".into())))

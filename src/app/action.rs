@@ -26,4 +26,13 @@ pub enum Action {
     AdjustRate(i64),
     SetRate(u64),
     SetFilter(String),
+    /// Inspect the selected process (or the owner of the selected port).
+    OpenInspector,
+    InspectPid(u32),
+    CloseInspector,
+    InspectorBack,
+    /// Re-inspect the focused ancestor or child.
+    InspectLink,
+    ToggleEnv,
+    ScrollInspector(i32),
 }

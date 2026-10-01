@@ -4,20 +4,18 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use sysinfo::{
-    Pid, Process, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, ThreadKind, Uid,
-    UpdateKind, Users,
+    Pid, Process, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, ThreadKind,
+    UpdateKind,
 };
 
+use super::users::UserNames;
 use crate::types::{ProcKey, ProcessInfo};
-
-const USER_LIST_RETRY: Duration = Duration::from_secs(5);
 
 pub struct ProcessCollector {
     sys: System,
     rows: Vec<ProcessInfo>,
     index: HashMap<ProcKey, usize>,
     seen: Vec<bool>,
-    users: UserNames,
     last_refresh: Option<Instant>,
 }
 
@@ -28,12 +26,11 @@ impl ProcessCollector {
             rows: Vec::new(),
             index: HashMap::new(),
             seen: Vec::new(),
-            users: UserNames::new(),
             last_refresh: None,
         }
     }
 
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, users: &mut UserNames) {
         let now = Instant::now();
         let elapsed = self.last_refresh.map(|t| now.duration_since(t));
         self.last_refresh = Some(now);
@@ -81,7 +78,7 @@ impl ProcessCollector {
                         name_lower: Arc::from(""),
                         command: Arc::from(""),
                         command_lower: Arc::from(""),
-                        user: self.users.resolve(process.user_id(), now),
+                        user: users.resolve(process.user_id(), now),
                         cpu_usage: 0.0,
                         memory: 0,
                         disk_rate: 0,
@@ -175,50 +172,5 @@ pub fn status_str(status: ProcessStatus) -> &'static str {
         ProcessStatus::UninterruptibleDiskSleep => "DiskSleep",
         ProcessStatus::Suspended => "Suspended",
         ProcessStatus::Unknown(_) => "Unknown",
-    }
-}
-
-/// Resolves user ids to names, caching hits. The `Users` list is reloaded after a
-/// miss, but at most every few seconds, because a burst of new processes owned by
-/// an unlisted account (LDAP users, Windows service SIDs) would otherwise reload it
-/// once per process.
-struct UserNames {
-    users: Users,
-    names: HashMap<Uid, Arc<str>>,
-    last_list_refresh: Instant,
-    unknown: Arc<str>,
-}
-
-impl UserNames {
-    fn new() -> Self {
-        Self {
-            users: Users::new_with_refreshed_list(),
-            names: HashMap::new(),
-            last_list_refresh: Instant::now(),
-            unknown: Arc::from("-"),
-        }
-    }
-
-    fn resolve(&mut self, uid: Option<&Uid>, now: Instant) -> Arc<str> {
-        let Some(uid) = uid else {
-            return self.unknown.clone();
-        };
-        if let Some(name) = self.names.get(uid) {
-            return name.clone();
-        }
-        if self.users.get_user_by_id(uid).is_none()
-            && now.duration_since(self.last_list_refresh) >= USER_LIST_RETRY
-        {
-            self.users.refresh();
-            self.last_list_refresh = now;
-        }
-        match self.users.get_user_by_id(uid) {
-            Some(user) => {
-                let name: Arc<str> = Arc::from(user.name());
-                self.names.insert(uid.clone(), name.clone());
-                name
-            }
-            None => Arc::from(uid.to_string()),
-        }
     }
 }

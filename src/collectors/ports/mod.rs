@@ -6,7 +6,7 @@ pub trait PortScanner: Send {
 }
 
 #[cfg(target_os = "linux")]
-mod linux;
+pub mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]

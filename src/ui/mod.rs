@@ -4,6 +4,7 @@ mod dashboard;
 mod disk_detail;
 mod gpu_detail;
 mod help;
+mod inspector;
 mod memory_detail;
 mod port_table;
 mod process_table;
@@ -43,19 +44,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .divider(Span::styled(" | ", Style::new().fg(theme::TEXT_MUTED)));
     frame.render_widget(tabs, tab_area);
 
-    // Content area based on current view
-    match app.view {
-        View::Dashboard => dashboard::render(frame, app, content_area),
-        View::CpuDetail => cpu_detail::render(frame, app, content_area),
-        View::MemoryDetail => memory_detail::render(frame, app, content_area),
-        View::DiskDetail => disk_detail::render(frame, app, content_area),
-        View::GpuDetail => gpu_detail::render(frame, app, content_area),
-        View::ProcessTable => {
-            process_table::render(frame, app, content_area);
-        }
-        View::PortTable => {
-            port_table::render(frame, app, content_area);
-        }
+    if app.inspector.is_some() {
+        inspector::render(frame, app, content_area);
+    } else {
+        render_view(frame, app, content_area);
     }
 
     // Status bar
@@ -107,6 +99,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     if app.show_help {
         help::render(frame);
+    }
+}
+
+fn render_view(frame: &mut Frame, app: &mut App, area: Rect) {
+    match app.view {
+        View::Dashboard => dashboard::render(frame, app, area),
+        View::CpuDetail => cpu_detail::render(frame, app, area),
+        View::MemoryDetail => memory_detail::render(frame, app, area),
+        View::DiskDetail => disk_detail::render(frame, app, area),
+        View::GpuDetail => gpu_detail::render(frame, app, area),
+        View::ProcessTable => {
+            process_table::render(frame, app, area);
+        }
+        View::PortTable => {
+            port_table::render(frame, app, area);
+        }
     }
 }
 

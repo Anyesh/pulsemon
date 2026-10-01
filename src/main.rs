@@ -52,6 +52,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
                 AppEvent::Key(key) => app.handle_key(key),
                 AppEvent::Resize => {}
                 AppEvent::Snapshot(snapshot) => app.apply_snapshot(*snapshot),
+                AppEvent::Detail(detail) => app.apply_detail(*detail),
                 AppEvent::Notice(msg) => app.set_status(msg),
             }
             dirty = true;

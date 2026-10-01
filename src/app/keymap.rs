@@ -28,7 +28,21 @@ pub fn normal(key: KeyEvent) -> Option<Action> {
         KeyCode::Delete | KeyCode::Char('K') => Action::RequestKill,
         KeyCode::Char('+') | KeyCode::Char('=') => Action::AdjustRate(-250),
         KeyCode::Char('-') => Action::AdjustRate(250),
+        KeyCode::Enter => Action::OpenInspector,
         _ => return None,
+    })
+}
+
+/// Keys while the inspector is open; anything not listed falls back to `normal`.
+pub fn inspector(key: KeyEvent) -> Option<Action> {
+    Some(match key.code {
+        KeyCode::Esc => Action::CloseInspector,
+        KeyCode::Backspace => Action::InspectorBack,
+        KeyCode::Enter => Action::InspectLink,
+        KeyCode::Char('e') => Action::ToggleEnv,
+        KeyCode::PageDown => Action::ScrollInspector(PAGE / 2),
+        KeyCode::PageUp => Action::ScrollInspector(-PAGE / 2),
+        _ => return normal(key),
     })
 }
 
@@ -52,6 +66,16 @@ mod tests {
             Some(Action::SwitchView(View::PortTable))
         );
         assert_eq!(normal(key(KeyCode::Char('8'))), None);
+    }
+
+    #[test]
+    fn inspector_keys_fall_back_to_normal() {
+        assert_eq!(inspector(key(KeyCode::Esc)), Some(Action::CloseInspector));
+        assert_eq!(
+            inspector(key(KeyCode::Char('j'))),
+            Some(Action::MoveSelection(1))
+        );
+        assert_eq!(inspector(key(KeyCode::Char('q'))), Some(Action::Quit));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod inspector;
 pub mod port_view;
 pub mod process_view;
 
