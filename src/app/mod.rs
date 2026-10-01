@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::collectors::inspect::ProcessDetail;
+use crate::collectors::signal;
 use crate::collectors::worker::{CollectorHandle, Request, Snapshot};
 use crate::config::Config;
 use crate::types::*;
@@ -76,7 +77,14 @@ pub enum InputMode {
     Normal,
     CommandPalette,
     Filter,
-    ConfirmKill,
+    SignalMenu,
+}
+
+/// The signal picker, bound to one process by pid and start time.
+pub struct SignalMenu {
+    pub key: ProcKey,
+    pub name: String,
+    pub cursor: usize,
 }
 
 pub struct App {
@@ -102,7 +110,7 @@ pub struct App {
 
     pub command_input: String,
     pub command_error: Option<String>,
-    pub confirm_kill: Option<(u32, String)>,
+    pub signal_menu: Option<SignalMenu>,
     pub show_help: bool,
     pub tick_rate: Duration,
     pub status_message: Option<(String, Instant)>,
@@ -129,7 +137,7 @@ impl App {
             mouse_capture: !config.no_mouse,
             command_input: String::new(),
             command_error: None,
-            confirm_kill: None,
+            signal_menu: None,
             show_help: false,
             tick_rate: Duration::from_millis(config.rate),
             status_message: None,
@@ -228,7 +236,7 @@ impl App {
         }
 
         match self.input_mode {
-            InputMode::ConfirmKill => self.handle_confirm_kill(key),
+            InputMode::SignalMenu => self.handle_signal_menu(key),
             InputMode::CommandPalette => self.handle_command_input(key),
             InputMode::Filter => self.handle_filter_input(key),
             InputMode::Normal if self.show_help => {
@@ -328,10 +336,16 @@ impl App {
                 let idx = (self.view.index() + VIEW_COUNT).wrapping_add_signed(step as isize);
                 self.switch_view(View::from_index(idx % VIEW_COUNT));
             }
-            Action::MoveSelection(delta) => match &mut self.inspector {
-                Some(inspector) => inspector.move_link(delta as i64),
-                None => self.move_selection(delta as i64),
-            },
+            Action::MoveSelection(delta) => {
+                if let Some(menu) = &mut self.signal_menu {
+                    let last = signal::available().len() as i64 - 1;
+                    menu.cursor = (menu.cursor as i64 + delta as i64).clamp(0, last) as usize;
+                } else if let Some(inspector) = &mut self.inspector {
+                    inspector.move_link(delta as i64);
+                } else {
+                    self.move_selection(delta as i64);
+                }
+            }
             Action::SelectFirst => self.select_index(0),
             Action::SelectLast => self.select_index(usize::MAX),
             Action::CycleSort => match self.table() {
@@ -350,12 +364,9 @@ impl App {
             },
             Action::SortProcesses(col) => self.process_view.set_sort_column(col),
             Action::SortPorts(col) => self.port_view.set_sort_column(col),
-            Action::RequestKill => self.initiate_kill(),
-            Action::Kill(pid) => self.collector.send(Request::Kill {
-                pid,
-                label: "process".into(),
-            }),
-            Action::KillPort(port) => self.kill_by_port(port),
+            Action::RequestKill => self.request_signal(),
+            Action::Kill(pid) => self.open_signal_menu_for_pid(pid),
+            Action::KillPort(port) => self.signal_port(port),
             Action::AdjustRate(delta_ms) => {
                 let ms = self.tick_rate.as_millis() as i64 + delta_ms;
                 if (250..=10_000).contains(&ms) {
@@ -432,7 +443,11 @@ impl App {
                 }
             },
             Action::ContextMenu(target) => self.context_menu(&target),
-            Action::ConfirmKill(confirmed) => self.finish_kill(confirmed),
+            Action::SendSignal(index) => self.send_signal(index),
+            Action::CloseSignalMenu => {
+                self.signal_menu = None;
+                self.input_mode = InputMode::Normal;
+            }
             Action::ToggleMouse => {
                 self.mouse_capture = !self.mouse_capture;
                 self.set_status(if self.mouse_capture {
@@ -556,17 +571,55 @@ impl App {
         self.rebuild_views();
     }
 
-    fn handle_confirm_kill(&mut self, key: KeyEvent) {
-        self.finish_kill(matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')));
+    fn handle_signal_menu(&mut self, key: KeyEvent) {
+        let action = match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('n') => Action::CloseSignalMenu,
+            KeyCode::Down | KeyCode::Char('j') => Action::MoveSelection(1),
+            KeyCode::Up | KeyCode::Char('k') => Action::MoveSelection(-1),
+            KeyCode::Enter => match &self.signal_menu {
+                Some(menu) => Action::SendSignal(menu.cursor),
+                None => Action::CloseSignalMenu,
+            },
+            KeyCode::Char(c @ '1'..='9') => Action::SendSignal(c as usize - '1' as usize),
+            _ => return,
+        };
+        self.apply(action);
     }
 
-    fn finish_kill(&mut self, confirmed: bool) {
-        if let Some((pid, label)) = self.confirm_kill.take() {
-            if confirmed {
-                self.collector.send(Request::Kill { pid, label });
-            }
+    fn send_signal(&mut self, index: usize) {
+        let Some(&signal) = signal::available().get(index) else {
+            return;
+        };
+        if let Some(menu) = self.signal_menu.take() {
+            self.collector.send(Request::Signal {
+                key: menu.key,
+                name: menu.name,
+                signal,
+            });
         }
         self.input_mode = InputMode::Normal;
+    }
+
+    /// Every way of killing a process (K, Delete, right click, :kill, :kill-port) ends
+    /// here, so all of them go through the menu and its pid-reuse check.
+    fn open_signal_menu(&mut self, key: ProcKey) {
+        let Some(row) = self.data.processes.iter().find(|p| p.key == key) else {
+            self.set_status(format!("PID {} is no longer running", key.pid));
+            return;
+        };
+        self.signal_menu = Some(SignalMenu {
+            key,
+            name: row.name.to_string(),
+            cursor: 0,
+        });
+        self.input_mode = InputMode::SignalMenu;
+    }
+
+    fn open_signal_menu_for_pid(&mut self, pid: u32) {
+        match self.data.processes.iter().find(|p| p.pid() == pid) {
+            Some(row) => self.open_signal_menu(row.key),
+            None => self.set_status(format!("No process with PID {pid}")),
+        }
     }
 
     fn context_menu(&mut self, target: &Target) {
@@ -580,52 +633,36 @@ impl App {
             }
             _ => None,
         };
-        let Some(row) = key.and_then(|k| self.data.processes.iter().find(|p| p.key == k)) else {
-            return;
-        };
-        self.confirm_kill = Some((row.pid(), row.name.to_string()));
-        self.input_mode = InputMode::ConfirmKill;
+        if let Some(key) = key {
+            self.open_signal_menu(key);
+        }
     }
 
-    fn kill_by_port(&mut self, port: u16) {
+    fn signal_port(&mut self, port: u16) {
         let pid = self
             .ports
             .iter()
             .find(|p| p.local_port == port)
             .and_then(|p| p.pid);
         match pid {
-            Some(pid) => self.collector.send(Request::Kill {
-                pid,
-                label: format!("process on port {port}"),
-            }),
+            Some(pid) => self.open_signal_menu_for_pid(pid),
             None => self.set_status(format!("No process found on port {}", port)),
         }
     }
 
-    fn initiate_kill(&mut self) {
-        if let Some(row) = self.inspector.as_ref().and_then(|i| i.row.as_ref()) {
-            self.confirm_kill = Some((row.pid(), row.name.to_string()));
-            self.input_mode = InputMode::ConfirmKill;
+    fn request_signal(&mut self) {
+        if let Some(key) = self.inspector.as_ref().map(|i| i.key) {
+            self.open_signal_menu(key);
             return;
         }
-        let target = match self.view {
-            View::ProcessTable => self
-                .selected_process()
-                .map(|p| Ok((p.pid(), p.name.to_string()))),
-            View::PortTable => self.selected_port().map(|p| {
-                p.pid
-                    .map(|pid| (pid, format!("port:{}", p.local_port)))
-                    .ok_or(())
-            }),
-            _ => None,
-        };
-        match target {
-            Some(Ok(target)) => {
-                self.confirm_kill = Some(target);
-                self.input_mode = InputMode::ConfirmKill;
-            }
-            Some(Err(())) => self.set_status("No PID associated with this port".to_string()),
-            None => {}
+        if self.table() == Some(TableKind::Ports)
+            && self.selected_port().is_some_and(|p| p.pid.is_none())
+        {
+            self.set_status("No PID associated with this port".to_string());
+            return;
+        }
+        if let Some(key) = self.selected_target() {
+            self.open_signal_menu(key);
         }
     }
 

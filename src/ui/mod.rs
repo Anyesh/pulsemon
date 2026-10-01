@@ -13,7 +13,7 @@ mod table;
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph, Tabs},
     Frame,
@@ -21,6 +21,7 @@ use ratatui::{
 
 use crate::app::action::Action;
 use crate::app::{App, InputMode, View};
+use crate::collectors::signal;
 use crate::theme;
 use hit::{HitMap, Target};
 
@@ -118,9 +119,9 @@ fn render_frame(frame: &mut Frame, app: &mut App, hits: &mut HitMap) {
             hits.push(screen, Target::Modal(None));
             render_filter_bar(frame, app);
         }
-        InputMode::ConfirmKill => {
-            hits.push(screen, Target::Modal(Some(Action::ConfirmKill(false))));
-            render_kill_confirm(frame, app, hits);
+        InputMode::SignalMenu => {
+            hits.push(screen, Target::Modal(Some(Action::CloseSignalMenu)));
+            render_signal_menu(frame, app, hits);
         }
         InputMode::Normal => {}
     }
@@ -191,62 +192,62 @@ fn render_filter_bar(frame: &mut Frame, app: &App) {
     frame.render_widget(input, filter_area);
 }
 
-fn render_kill_confirm(frame: &mut Frame, app: &App, hits: &mut HitMap) {
-    if let Some((pid, name)) = &app.confirm_kill {
-        let area = frame.area();
-        let popup_width = 50u16.min(area.width);
-        let popup_height = 5u16.min(area.height);
-        let popup_area = Rect {
-            x: (area.width.saturating_sub(popup_width)) / 2,
-            y: (area.height.saturating_sub(popup_height)) / 2,
-            width: popup_width,
-            height: popup_height,
+fn render_signal_menu(frame: &mut Frame, app: &App, hits: &mut HitMap) {
+    let Some(menu) = &app.signal_menu else {
+        return;
+    };
+    let signals = signal::available();
+    let area = frame.area();
+    let width = 52u16.min(area.width);
+    let height = (signals.len() as u16 + 4).min(area.height);
+    let popup = Rect {
+        x: area.width.saturating_sub(width) / 2,
+        y: area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+
+    let title = Line::from(vec![
+        Span::styled(
+            " Signal ",
+            Style::new().fg(theme::RED).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{} ({}) ", menu.name, menu.key.pid),
+            theme::text_style(),
+        ),
+    ]);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(theme::RED))
+        .title(title)
+        .title_bottom(Line::from(Span::styled(
+            " Enter send \u{00b7} 1-9 pick \u{00b7} Esc cancel ",
+            theme::dim_style(),
+        )));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    for (i, sig) in signals.iter().enumerate() {
+        let y = inner.y + 1 + i as u16;
+        if y >= inner.bottom() {
+            break;
+        }
+        let row = Rect::new(inner.x, y, inner.width, 1);
+        let focused = i == menu.cursor;
+        let style = if focused {
+            theme::selected_style()
+        } else {
+            theme::text_style()
         };
-
-        frame.render_widget(Clear, popup_area);
-
-        let title = Line::from(Span::styled(
-            " Confirm Kill ",
-            Style::new()
-                .fg(theme::RED)
-                .add_modifier(ratatui::style::Modifier::BOLD),
-        ));
-
-        let block = Block::bordered()
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(theme::RED))
-            .title(title);
-
-        let text = vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(format!("  Kill {} ", name), Style::new().fg(theme::TEXT)),
-                Span::styled(format!("(PID {})", pid), theme::dim_style()),
-                Span::styled("  ?", Style::new().fg(theme::TEXT)),
-            ]),
-            Line::from(vec![
-                Span::styled("  [", theme::dim_style()),
-                Span::styled("y", Style::new().fg(theme::RED)),
-                Span::styled("]es  /  [", theme::dim_style()),
-                Span::styled("n", Style::new().fg(theme::GREEN)),
-                Span::styled("]o", theme::dim_style()),
-            ]),
-        ];
-
-        let popup = Paragraph::new(text).block(block);
-        frame.render_widget(popup, popup_area);
-
-        // Offsets of "[y]es" and "[n]o" in the button line above.
-        let buttons_y = popup_area.y + 3;
-        let left = popup_area.x + 1;
-        hits.push(
-            Rect::new(left + 2, buttons_y, 5, 1),
-            Target::Button(Action::ConfirmKill(true)),
-        );
-        hits.push(
-            Rect::new(left + 12, buttons_y, 4, 1),
-            Target::Button(Action::ConfirmKill(false)),
-        );
+        let line = Line::from(vec![
+            Span::styled(if focused { " \u{25b8} " } else { "   " }, style),
+            Span::styled(format!("{} {:<10}", i + 1, sig.name()), style),
+            Span::styled(sig.meaning(), theme::dim_style()),
+        ]);
+        frame.render_widget(Paragraph::new(line), row);
+        hits.push(row, Target::Button(Action::SendSignal(i)));
     }
 }
 

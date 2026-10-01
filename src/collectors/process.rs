@@ -2,10 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Result};
 use sysinfo::{
-    Pid, Process, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, ThreadKind,
-    UpdateKind,
+    Process, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, ThreadKind, UpdateKind,
 };
 
 use super::users::UserNames;
@@ -105,20 +103,6 @@ impl ProcessCollector {
 
     pub fn rows(&self) -> &[ProcessInfo] {
         &self.rows
-    }
-
-    pub fn kill_process(&self, pid: u32) -> Result<()> {
-        let sysinfo_pid = Pid::from_u32(pid);
-        let process = self
-            .sys
-            .process(sysinfo_pid)
-            .ok_or_else(|| anyhow::anyhow!("Process with PID {} not found", pid))?;
-
-        if !process.kill() {
-            bail!("Failed to kill process with PID {}", pid);
-        }
-
-        Ok(())
     }
 }
 

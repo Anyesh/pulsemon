@@ -3,10 +3,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use sysinfo::System;
+
 use super::gpu::{self, GpuBackend};
 use super::inspect::{DetailCollector, ProcessDetail};
 use super::ports::{self, PortScanner};
 use super::process::ProcessCollector;
+use super::signal::{self, Signal};
 use super::system::SystemCollector;
 use super::users::UserNames;
 use crate::config::Config;
@@ -19,9 +22,11 @@ pub enum Request {
     Refresh {
         ports: bool,
     },
-    Kill {
-        pid: u32,
-        label: String,
+    /// Sent only if `key` still names the same process; see `signal::send`.
+    Signal {
+        key: ProcKey,
+        name: String,
+        signal: Signal,
     },
     /// Sets (or clears) the process whose detail rides along with every snapshot.
     Inspect(Option<ProcKey>),
@@ -60,6 +65,7 @@ impl CollectorHandle {
                     processes: ProcessCollector::new(),
                     users: UserNames::new(),
                     detail: DetailCollector::new(),
+                    signal_sys: System::new(),
                     port_scanner: (!no_ports).then(ports::create_scanner),
                     gpu_backends: if no_gpu {
                         Vec::new()
@@ -86,6 +92,9 @@ struct Worker {
     processes: ProcessCollector,
     users: UserNames,
     detail: DetailCollector,
+    /// Separate from the collectors' so a pid lookup before signalling does not
+    /// disturb their CPU accounting.
+    signal_sys: System,
     port_scanner: Option<Box<dyn PortScanner>>,
     gpu_backends: Vec<Box<dyn GpuBackend>>,
     events: Sender<AppEvent>,
@@ -110,10 +119,11 @@ impl Worker {
                             None => continue,
                         }
                     }
-                    Request::Kill { pid, label } => {
-                        AppEvent::Notice(match self.processes.kill_process(pid) {
-                            Ok(()) => format!("Killed {label} (PID {pid})"),
-                            Err(e) => format!("Failed to kill {label}: {e}"),
+                    Request::Signal { key, name, signal } => {
+                        let what = format!("{} to {name} ({})", signal.name(), key.pid);
+                        AppEvent::Notice(match signal::send(&mut self.signal_sys, key, signal) {
+                            Ok(()) => format!("Sent {what}"),
+                            Err(e) => format!("Did not send {what}: {e}"),
                         })
                     }
                 };

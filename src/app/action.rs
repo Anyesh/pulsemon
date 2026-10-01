@@ -23,8 +23,11 @@ pub enum Action {
     ToggleSortDir,
     SortProcesses(ProcessColumn),
     SortPorts(PortColumn),
+    /// Open the signal menu for the selection.
     RequestKill,
+    /// Open the signal menu for a pid (`:kill`).
     Kill(u32),
+    /// Open the signal menu for a port's owner (`:kill-port`).
     KillPort(u16),
     AdjustRate(i64),
     SetRate(u64),
@@ -47,6 +50,8 @@ pub enum Action {
     ScrollTable(TableKind, i32),
     /// Right click: act on the process behind whatever was clicked.
     ContextMenu(Box<Target>),
-    ConfirmKill(bool),
+    /// Index into `signal::available()`.
+    SendSignal(usize),
+    CloseSignalMenu,
     ToggleMouse,
 }
