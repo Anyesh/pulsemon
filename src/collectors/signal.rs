@@ -241,12 +241,18 @@ mod tests {
 
     #[test]
     fn signals_a_real_child_and_refuses_a_stale_key() {
-        let mut child = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sleep" })
-            .args(if cfg!(windows) {
-                &["/C", "timeout /T 30 /NOBREAK >NUL"][..]
-            } else {
-                &["30"][..]
-            })
+        // `timeout` on Windows exits at once without a console (as on CI runners),
+        // so a ping to loopback stands in for a long-lived child there.
+        let (program, args): (&str, &[&str]) = if cfg!(windows) {
+            ("ping", &["-n", "31", "127.0.0.1"])
+        } else {
+            ("sleep", &["30"])
+        };
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .expect("spawn child");
         let pid = child.id();
