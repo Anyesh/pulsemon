@@ -2,8 +2,6 @@ use crate::types::GpuMetrics;
 use anyhow::Result;
 
 pub trait GpuBackend: Send {
-    fn name(&self) -> &str;
-    fn is_available(&self) -> bool;
     fn refresh(&mut self) -> Result<()>;
     fn metrics(&self) -> Vec<GpuMetrics>;
 }

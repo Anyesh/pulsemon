@@ -27,14 +27,6 @@ impl AppleBackend {
 }
 
 impl GpuBackend for AppleBackend {
-    fn name(&self) -> &str {
-        "Apple"
-    }
-
-    fn is_available(&self) -> bool {
-        true
-    }
-
     fn refresh(&mut self) -> Result<()> {
         // Try to get GPU utilization from powermetrics (requires sudo)
         // Falls back to just showing the GPU name if powermetrics fails

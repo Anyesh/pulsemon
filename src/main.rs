@@ -41,7 +41,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
         match events.next()? {
             AppEvent::Key(key) => app.handle_key(key),
             AppEvent::Tick => app.refresh_all(),
-            AppEvent::Resize(_, _) => {} // ratatui handles redraw
+            AppEvent::Resize => {} // ratatui handles redraw
         }
 
         if !app.running {

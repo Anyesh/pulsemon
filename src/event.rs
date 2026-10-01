@@ -12,8 +12,8 @@ pub enum AppEvent {
     Key(KeyEvent),
     /// A periodic tick used to drive UI updates.
     Tick,
-    /// The terminal was resized to (columns, rows).
-    Resize(u16, u16),
+    /// The terminal was resized.
+    Resize,
 }
 
 /// Polls crossterm events on a background thread and forwards them as
@@ -45,8 +45,8 @@ impl EventHandler {
                                     return;
                                 }
                             }
-                            Ok(Event::Resize(cols, rows)) => {
-                                if sender.send(AppEvent::Resize(cols, rows)).is_err() {
+                            Ok(Event::Resize(..)) => {
+                                if sender.send(AppEvent::Resize).is_err() {
                                     return;
                                 }
                             }

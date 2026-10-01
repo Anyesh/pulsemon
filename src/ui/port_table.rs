@@ -52,7 +52,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
                 Cell::from(Span::styled(p.protocol.clone(), theme::text_style())),
                 Cell::from(Span::styled(p.local_addr.clone(), theme::text_style())),
                 Cell::from(Span::styled(p.local_port.to_string(), theme::text_style())),
-                Cell::from(Span::styled(p.remote_addr.clone(), theme::dim_style())),
+                Cell::from(Span::styled(
+                    if p.remote_port == 0 {
+                        p.remote_addr.clone()
+                    } else {
+                        format!("{}:{}", p.remote_addr, p.remote_port)
+                    },
+                    theme::dim_style(),
+                )),
                 Cell::from(Span::styled(p.state.clone(), theme::text_style())),
                 Cell::from(Span::styled(
                     p.pid

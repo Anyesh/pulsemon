@@ -346,13 +346,6 @@ impl App {
                 }
             }
 
-            // Enter to expand from dashboard
-            KeyCode::Enter => {
-                if self.view == View::Dashboard {
-                    // No-op on dashboard
-                }
-            }
-
             _ => {}
         }
     }
@@ -420,7 +413,7 @@ impl App {
     }
 
     fn execute_command(&mut self, cmd: &str) {
-        let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
         if parts.is_empty() {
             return;
         }

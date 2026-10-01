@@ -23,14 +23,6 @@ impl AmdBackend {
 }
 
 impl GpuBackend for AmdBackend {
-    fn name(&self) -> &str {
-        "AMD"
-    }
-
-    fn is_available(&self) -> bool {
-        true
-    }
-
     fn refresh(&mut self) -> Result<()> {
         let output = Command::new("rocm-smi")
             .args([

@@ -6,6 +6,20 @@ on:
   pull_request:
 
 jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
   check:
     name: ${{ matrix.os }} (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -37,6 +51,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          components: clippy
+
+      - name: Clippy
+        run: cargo clippy --target ${{ matrix.target }} --all-targets -- -D warnings
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}

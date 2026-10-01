@@ -31,14 +31,6 @@ impl NvidiaBackend {
 }
 
 impl GpuBackend for NvidiaBackend {
-    fn name(&self) -> &str {
-        "NVIDIA"
-    }
-
-    fn is_available(&self) -> bool {
-        self.device_count > 0
-    }
-
     fn refresh(&mut self) -> Result<()> {
         let mut metrics = Vec::new();
 

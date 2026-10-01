@@ -16,7 +16,6 @@ pub const BG_ALT_ROW: Color = Color::Rgb(28, 28, 28);
 
 // Semantic colors — kept soft
 pub const GREEN: Color = Color::Rgb(120, 200, 120);
-pub const YELLOW: Color = Color::Rgb(220, 200, 100);
 pub const RED: Color = Color::Rgb(220, 100, 100);
 
 // Gauge colors — orange gradient

@@ -21,14 +21,6 @@ impl IntelBackend {
 }
 
 impl GpuBackend for IntelBackend {
-    fn name(&self) -> &str {
-        "Intel"
-    }
-
-    fn is_available(&self) -> bool {
-        true
-    }
-
     fn refresh(&mut self) -> Result<()> {
         // intel_gpu_top -J -s 1000 -n 1 outputs one JSON sample
         let output = Command::new("intel_gpu_top")
