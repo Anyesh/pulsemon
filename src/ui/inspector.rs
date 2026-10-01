@@ -9,6 +9,7 @@ use ratatui::{
     Frame,
 };
 
+use super::hit::{HitMap, Target};
 use crate::app::App;
 use crate::collectors::inspect::{Account, Field, Missing, ProcessDetail};
 use crate::theme;
@@ -17,7 +18,7 @@ use crate::views::inspector::{ChainEnd, InspectorView, Link};
 
 const LABEL_WIDTH: usize = 13;
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect, hits: &mut HitMap) {
     let Some(view) = app.inspector.as_mut() else {
         return;
     };
@@ -63,6 +64,17 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     }
     view.scroll = view.scroll.min(max_scroll);
     frame.render_widget(Paragraph::new(lines).scroll((view.scroll, 0)), body_area);
+
+    hits.push(body_area, Target::InspectorBody);
+    for (i, &line) in link_lines.iter().enumerate() {
+        let Some(row) = line.checked_sub(view.scroll).filter(|&r| r < height) else {
+            continue;
+        };
+        if let Some(link) = view.link(i) {
+            let rect = Rect::new(body_area.x, body_area.y + row, body_area.width, 1);
+            hits.push(rect, Target::InspectorLink(link.key));
+        }
+    }
 }
 
 fn stats_line(view: &InspectorView) -> Line<'static> {

@@ -5,10 +5,12 @@ use ratatui::{
     Frame,
 };
 
+use super::hit::{HitMap, Target};
 use super::table::{self, Column};
 use crate::app::App;
 use crate::theme;
 use crate::views::port_view::PortColumn;
+use crate::views::TableKind;
 
 pub const COLUMNS: [Column<PortColumn>; 7] = [
     Column {
@@ -48,8 +50,7 @@ pub const COLUMNS: [Column<PortColumn>; 7] = [
     },
 ];
 
-/// Returns the table's inner area.
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect, hits: &mut HitMap) {
     let view = &mut app.port_view;
     let ports = &app.ports;
     let count = view.order.len();
@@ -65,7 +66,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
         .title_bottom(super::filter_title(&view.filter));
 
     let order = &view.order;
-    table::render(
+    let inner = table::render(
         frame,
         area,
         block,
@@ -94,5 +95,13 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
                 Cell::from(Span::styled(p.process_name.as_str(), theme::text_style())),
             ])
         },
-    )
+    );
+
+    hits.push(inner, Target::TableBody(TableKind::Ports));
+    for (rect, col) in table::column_rects(inner, &COLUMNS).iter().zip(&COLUMNS) {
+        hits.push(*rect, Target::PortHeader(col.key));
+    }
+    for (rect, pos) in table::visible_rows(inner, &app.port_view.cursor, count) {
+        hits.push(rect, Target::PortRow(pos));
+    }
 }

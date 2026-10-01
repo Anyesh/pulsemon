@@ -145,6 +145,10 @@ impl PortView {
             .map(|&i| PortKey::of(&ports[i]));
     }
 
+    pub fn key_at(&self, ports: &[PortInfo], pos: usize) -> Option<PortKey> {
+        self.order.get(pos).map(|&i| PortKey::of(&ports[i]))
+    }
+
     pub fn selected<'a>(&self, ports: &'a [PortInfo]) -> Option<&'a PortInfo> {
         self.selected.as_ref()?;
         ports.get(*self.order.get(self.cursor.cursor)?)
@@ -155,6 +159,14 @@ impl PortView {
             column,
             ascending: true,
         };
+    }
+
+    pub fn click_column(&mut self, column: PortColumn) {
+        if self.sort.column == column {
+            self.sort.ascending = !self.sort.ascending;
+        } else {
+            self.set_sort_column(column);
+        }
     }
 
     pub fn cycle_sort(&mut self) {

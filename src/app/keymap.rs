@@ -29,6 +29,7 @@ pub fn normal(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('+') | KeyCode::Char('=') => Action::AdjustRate(-250),
         KeyCode::Char('-') => Action::AdjustRate(250),
         KeyCode::Enter => Action::OpenInspector,
+        KeyCode::Char('m') => Action::ToggleMouse,
         _ => return None,
     })
 }

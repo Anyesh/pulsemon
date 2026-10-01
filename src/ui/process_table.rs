@@ -5,11 +5,13 @@ use ratatui::{
     Frame,
 };
 
+use super::hit::{HitMap, Target};
 use super::table::{self, Column};
 use crate::app::App;
 use crate::theme;
 use crate::types::format_bytes;
 use crate::views::process_view::ProcessColumn;
+use crate::views::TableKind;
 
 pub const COLUMNS: [Column<ProcessColumn>; 8] = [
     Column {
@@ -54,8 +56,7 @@ pub const COLUMNS: [Column<ProcessColumn>; 8] = [
     },
 ];
 
-/// Returns the table's inner area.
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect, hits: &mut HitMap) {
     let view = &mut app.process_view;
     let procs = &app.data.processes;
     let count = view.order.len();
@@ -71,7 +72,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
         .title_bottom(super::filter_title(&view.filter));
 
     let order = &view.order;
-    table::render(
+    let inner = table::render(
         frame,
         area,
         block,
@@ -99,5 +100,15 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) -> Rect {
                 Cell::from(Span::styled(&*p.command, theme::dim_style())),
             ])
         },
-    )
+    );
+
+    hits.push(inner, Target::TableBody(TableKind::Processes));
+    for (rect, col) in table::column_rects(inner, &COLUMNS).iter().zip(&COLUMNS) {
+        hits.push(*rect, Target::ProcessHeader(col.key));
+    }
+    let view = &app.process_view;
+    for (rect, pos) in table::visible_rows(inner, &view.cursor, count) {
+        let key = app.data.processes[view.order[pos]].key;
+        hits.push(rect, Target::ProcessRow(key));
+    }
 }

@@ -23,10 +23,10 @@ use terminal::TerminalGuard;
 fn main() -> Result<()> {
     let config = Config::parse();
     let mut guard = TerminalGuard::new()?;
-    run(guard.terminal(), &config)
+    run(&mut guard, &config)
 }
 
-fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
+fn run(guard: &mut TerminalGuard, config: &Config) -> Result<()> {
     let events = EventHandler::new();
     let collector = CollectorHandle::spawn(config, events.sender());
     let mut app = App::new(config, collector);
@@ -34,8 +34,11 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
     let mut dirty = true;
 
     loop {
+        if guard.mouse() != app.mouse_capture {
+            guard.set_mouse(app.mouse_capture)?;
+        }
         if dirty {
-            terminal.draw(|frame| ui::render(frame, &mut app))?;
+            guard.terminal().draw(|frame| ui::render(frame, &mut app))?;
             dirty = false;
         }
 
@@ -50,7 +53,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal, config: &Config) -> Result<()> {
         while let Some(event) = next {
             match event {
                 AppEvent::Key(key) => app.handle_key(key),
-                AppEvent::Resize => {}
+                AppEvent::Mouse(mouse, at) => app.handle_mouse(mouse, at),
+                AppEvent::Resize => app.on_resize(),
                 AppEvent::Snapshot(snapshot) => app.apply_snapshot(*snapshot),
                 AppEvent::Detail(detail) => app.apply_detail(*detail),
                 AppEvent::Notice(msg) => app.set_status(msg),

@@ -1,15 +1,17 @@
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
-use crossterm::event::{self, Event, KeyEvent};
+use crossterm::event::{self, Event, KeyEvent, MouseEvent, MouseEventKind};
 
 use crate::collectors::inspect::ProcessDetail;
 use crate::collectors::worker::Snapshot;
 
 pub enum AppEvent {
     Key(KeyEvent),
+    /// Stamped when read, so double-click timing is not skewed by a busy main loop.
+    Mouse(MouseEvent, Instant),
     Resize,
     Snapshot(Box<Snapshot>),
     /// Inspector detail sent as soon as a new process is targeted, ahead of the next
@@ -35,6 +37,14 @@ impl EventHandler {
             let Ok(event) = event::read() else { return };
             let forwarded = match event {
                 Event::Key(key) => AppEvent::Key(key),
+                // Motion and drags carry nothing we act on; Windows reports motion even
+                // without motion tracking, so drop it before it reaches the queue.
+                Event::Mouse(m)
+                    if matches!(m.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) =>
+                {
+                    continue
+                }
+                Event::Mouse(m) => AppEvent::Mouse(m, Instant::now()),
                 Event::Resize(..) => AppEvent::Resize,
                 _ => continue,
             };

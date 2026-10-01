@@ -6,11 +6,12 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use super::hit::{HitMap, Target};
+use crate::app::{App, View};
 use crate::theme;
 use crate::types::format_bytes;
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect, hits: &mut HitMap) {
     let [top_area, sparkline_area, disk_gpu_area, process_area] = Layout::vertical([
         Constraint::Length(5),
         Constraint::Length(4),
@@ -19,15 +20,17 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     ])
     .areas(area);
 
-    render_top_gauges(frame, app, top_area);
-    render_sparklines(frame, app, sparkline_area);
-    render_disk_gpu(frame, app, disk_gpu_area);
-    render_mini_process_table(frame, app, process_area);
+    render_top_gauges(frame, app, top_area, hits);
+    render_sparklines(frame, app, sparkline_area, hits);
+    render_disk_gpu(frame, app, disk_gpu_area, hits);
+    render_mini_process_table(frame, app, process_area, hits);
 }
 
-fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect) {
+fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect, hits: &mut HitMap) {
     let [cpu_area, mem_area] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
+    hits.push(cpu_area, Target::Panel(View::CpuDetail));
+    hits.push(mem_area, Target::Panel(View::MemoryDetail));
 
     // CPU gauge
     let cpu_usage = app.data.cpu.global_usage as f64;
@@ -86,9 +89,11 @@ fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(mem_gauge, mem_area);
 }
 
-fn render_sparklines(frame: &mut Frame, app: &App, area: Rect) {
+fn render_sparklines(frame: &mut Frame, app: &App, area: Rect, hits: &mut HitMap) {
     let [cpu_area, mem_area] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
+    hits.push(cpu_area, Target::Panel(View::CpuDetail));
+    hits.push(mem_area, Target::Panel(View::MemoryDetail));
 
     let cpu_data: Vec<u64> = app.data.cpu.history.iter().map(|v| *v as u64).collect();
     let cpu_sparkline = Sparkline::default()
@@ -117,9 +122,11 @@ fn render_sparklines(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(mem_sparkline, mem_area);
 }
 
-fn render_disk_gpu(frame: &mut Frame, app: &App, area: Rect) {
+fn render_disk_gpu(frame: &mut Frame, app: &App, area: Rect, hits: &mut HitMap) {
     let [disk_area, gpu_area] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
+    hits.push(disk_area, Target::Panel(View::DiskDetail));
+    hits.push(gpu_area, Target::Panel(View::GpuDetail));
 
     // Disk section
     let disk_block = Block::bordered()
@@ -199,7 +206,7 @@ fn render_disk_gpu(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn render_mini_process_table(frame: &mut Frame, app: &App, area: Rect) {
+fn render_mini_process_table(frame: &mut Frame, app: &App, area: Rect, hits: &mut HitMap) {
     let header = Row::new(vec![
         Cell::from("PID"),
         Cell::from("Name"),
@@ -246,4 +253,20 @@ fn render_mini_process_table(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     frame.render_widget(table, area);
+
+    hits.push(area, Target::Panel(View::ProcessTable));
+    // Rows start below the top border and the header line.
+    let first_row = area.y.saturating_add(2);
+    let inner_width = area.width.saturating_sub(2);
+    for (i, &row) in app.process_view.top.iter().enumerate() {
+        let y = first_row + i as u16;
+        if y + 1 >= area.bottom() {
+            break;
+        }
+        let key = app.data.processes[row].key;
+        hits.push(
+            Rect::new(area.x + 1, y, inner_width, 1),
+            Target::TopProcess(key),
+        );
+    }
 }

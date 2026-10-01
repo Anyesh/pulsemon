@@ -3,6 +3,12 @@ pub mod port_view;
 pub mod process_view;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableKind {
+    Processes,
+    Ports,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sort<C> {
     pub column: C,
     pub ascending: bool,
@@ -38,6 +44,12 @@ impl TableCursor {
         self.cursor = index.min(len - 1);
         self.follow = true;
         self.ensure_visible();
+    }
+
+    pub fn scroll(&mut self, len: usize, delta: i64) {
+        let max = len.saturating_sub(self.viewport) as i64;
+        self.offset = (self.offset as i64 + delta).clamp(0, max) as usize;
+        self.follow = false;
     }
 
     /// Called after the row list changes length or the viewport is re-measured.
@@ -97,6 +109,21 @@ mod tests {
         assert_eq!(c.cursor, 0);
         c.move_by(0, 1);
         assert_eq!(c.cursor, 0);
+    }
+
+    #[test]
+    fn wheel_scroll_keeps_cursor() {
+        let mut c = cursor(5);
+        c.select(100, 2);
+        c.scroll(100, 10);
+        assert_eq!((c.cursor, c.offset), (2, 10));
+        assert_eq!(c.visible_cursor(), None);
+        c.fit(100, 5);
+        assert_eq!(c.offset, 10, "refresh must not pull the window back");
+        c.scroll(100, 1000);
+        assert_eq!(c.offset, 95);
+        c.scroll(100, -1000);
+        assert_eq!(c.offset, 0);
     }
 
     #[test]

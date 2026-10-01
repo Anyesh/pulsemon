@@ -15,6 +15,10 @@ pub struct Config {
     #[arg(long)]
     pub no_ports: bool,
 
+    /// Start with mouse capture off (toggle with m)
+    #[arg(long)]
+    pub no_mouse: bool,
+
     /// Show how long each collection pass takes in the status bar
     #[arg(long)]
     pub debug_timing: bool,

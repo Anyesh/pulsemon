@@ -132,6 +132,12 @@ impl ProcessView {
         self.sync_selected(rows);
     }
 
+    pub fn select_key(&mut self, rows: &[ProcessInfo], key: ProcKey) {
+        if let Some(pos) = self.order.iter().position(|&i| rows[i].key == key) {
+            self.select_index(rows, pos);
+        }
+    }
+
     fn sync_selected(&mut self, rows: &[ProcessInfo]) {
         self.selected = self.order.get(self.cursor.cursor).map(|&i| rows[i].key);
     }
@@ -141,6 +147,15 @@ impl ProcessView {
             column,
             ascending: column.default_ascending(),
         };
+    }
+
+    /// A second click on the active column flips the direction.
+    pub fn click_column(&mut self, column: ProcessColumn) {
+        if self.sort.column == column {
+            self.sort.ascending = !self.sort.ascending;
+        } else {
+            self.set_sort_column(column);
+        }
     }
 
     pub fn cycle_sort(&mut self) {
@@ -326,5 +341,17 @@ pub mod tests {
         view.filter = "23".into();
         view.rebuild(&rows);
         assert_eq!(order_of(&view, &rows), vec![1234]);
+    }
+
+    #[test]
+    fn header_click_flips_then_switches() {
+        let mut view = ProcessView::default();
+        view.click_column(ProcessColumn::Cpu);
+        assert!(view.sort.ascending);
+        view.click_column(ProcessColumn::Name);
+        assert_eq!(view.sort.column, ProcessColumn::Name);
+        assert!(view.sort.ascending);
+        view.click_column(ProcessColumn::Memory);
+        assert!(!view.sort.ascending);
     }
 }

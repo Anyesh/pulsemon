@@ -1,5 +1,7 @@
+use std::rc::Rc;
+
 use ratatui::{
-    layout::{Constraint, Flex, Rect},
+    layout::{Constraint, Flex, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Cell, HighlightSpacing, Row, Table, TableState},
@@ -15,6 +17,41 @@ pub struct Column<K> {
     pub label: &'static str,
     pub width: Constraint,
     pub key: K,
+}
+
+/// Header cell areas for a table drawn inside `inner` (the block's inner area).
+/// This mirrors how ratatui's `Table` lays out columns: a selection gutter of width
+/// zero (we never draw a highlight symbol), then `Flex::Start` with spacing 1.
+pub fn column_rects<K>(inner: Rect, columns: &[Column<K>]) -> Rc<[Rect]> {
+    let header = Rect { height: 1, ..inner };
+    let [_gutter, columns_area] =
+        Layout::horizontal([Constraint::Length(0), Constraint::Fill(0)]).areas(header);
+    Layout::horizontal(columns.iter().map(|c| c.width))
+        .flex(Flex::Start)
+        .spacing(1)
+        .split(columns_area)
+}
+
+/// Screen row of each visible table row, paired with its position in the full list.
+pub fn visible_rows(
+    inner: Rect,
+    cursor: &TableCursor,
+    len: usize,
+) -> impl Iterator<Item = (Rect, usize)> {
+    let body = body_rect(inner);
+    let end = (cursor.offset + cursor.viewport).min(len);
+    (cursor.offset..end)
+        .zip(body.y..body.bottom())
+        .map(move |(pos, y)| {
+            (
+                Rect {
+                    y,
+                    height: 1,
+                    ..body
+                },
+                pos,
+            )
+        })
 }
 
 /// Row area under the header, one terminal row per table row.
@@ -90,7 +127,82 @@ pub fn render<'a, K: Copy + PartialEq>(
 
 #[cfg(test)]
 mod tests {
+    use ratatui::{backend::TestBackend, widgets::Borders, Terminal};
+
     use super::*;
+
+    const COLUMNS: [Column<u8>; 4] = [
+        Column {
+            label: "PID",
+            width: Constraint::Length(7),
+            key: 0,
+        },
+        Column {
+            label: "Name",
+            width: Constraint::Length(12),
+            key: 1,
+        },
+        Column {
+            label: "CPU%",
+            width: Constraint::Length(8),
+            key: 2,
+        },
+        Column {
+            label: "Command",
+            width: Constraint::Fill(1),
+            key: 3,
+        },
+    ];
+
+    fn rendered_header_positions(width: u16, selected: bool) -> (Vec<u16>, Vec<Rect>) {
+        let mut terminal = Terminal::new(TestBackend::new(width, 8)).unwrap();
+        let mut inner = Rect::default();
+        terminal
+            .draw(|frame| {
+                let mut cursor = TableCursor::default();
+                inner = render(
+                    frame,
+                    frame.area(),
+                    Block::default().borders(Borders::ALL),
+                    &COLUMNS,
+                    Sort {
+                        column: 1,
+                        ascending: true,
+                    },
+                    &mut cursor,
+                    3,
+                    selected,
+                    |pos| Row::new(vec![Cell::from(pos.to_string()); 4]),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let cells: Vec<String> = (0..width)
+            .map(|x| buffer[(x, inner.y)].symbol().to_string())
+            .collect();
+        let starts = COLUMNS
+            .iter()
+            .map(|c| {
+                let label: Vec<String> = c.label.chars().map(String::from).collect();
+                cells
+                    .windows(label.len())
+                    .position(|w| w == label.as_slice())
+                    .expect("label drawn") as u16
+            })
+            .collect();
+        (starts, column_rects(inner, &COLUMNS).to_vec())
+    }
+
+    #[test]
+    fn header_rects_match_rendered_labels() {
+        for width in [40, 80, 157] {
+            for selected in [false, true] {
+                let (starts, rects) = rendered_header_positions(width, selected);
+                let xs: Vec<u16> = rects.iter().map(|r| r.x).collect();
+                assert_eq!(starts, xs, "width {width}, selected {selected}");
+            }
+        }
+    }
 
     #[test]
     fn body_starts_below_header() {

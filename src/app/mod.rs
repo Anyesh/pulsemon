@@ -1,19 +1,23 @@
 pub mod action;
 mod command;
 mod keymap;
+mod mouse;
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::collectors::inspect::ProcessDetail;
 use crate::collectors::worker::{CollectorHandle, Request, Snapshot};
 use crate::config::Config;
 use crate::types::*;
+use crate::ui::hit::{HitMap, Target};
 use crate::views::inspector::InspectorView;
 use crate::views::port_view::PortView;
 use crate::views::process_view::ProcessView;
+use crate::views::TableKind;
 use action::Action;
+use mouse::{ClickId, ClickTracker};
 
 const STATUS_TTL: Duration = Duration::from_secs(5);
 const VIEW_COUNT: usize = 7;
@@ -90,6 +94,11 @@ pub struct App {
     pub port_view: PortView,
     /// When set, the inspector replaces the current view's content.
     pub inspector: Option<InspectorView>,
+    /// Clickable regions of the last frame, filled in by the renderers.
+    pub hits: HitMap,
+    clicks: ClickTracker,
+    /// Whether the terminal should report mouse events; the main loop applies it.
+    pub mouse_capture: bool,
 
     pub command_input: String,
     pub command_error: Option<String>,
@@ -115,6 +124,9 @@ impl App {
             process_view: ProcessView::default(),
             port_view: PortView::default(),
             inspector: None,
+            hits: HitMap::default(),
+            clicks: ClickTracker::default(),
+            mouse_capture: !config.no_mouse,
             command_input: String::new(),
             command_error: None,
             confirm_kill: None,
@@ -172,30 +184,30 @@ impl App {
     }
 
     /// The table that table-level actions (move, sort, filter) apply to.
-    fn table(&self) -> Option<Table> {
+    fn table(&self) -> Option<TableKind> {
         match self.view {
-            View::ProcessTable => Some(Table::Processes),
-            View::PortTable => Some(Table::Ports),
+            View::ProcessTable => Some(TableKind::Processes),
+            View::PortTable => Some(TableKind::Ports),
             _ => None,
         }
     }
 
     /// Filtering needs a table; from views without one it targets processes.
-    fn filter_table(&self) -> Table {
-        self.table().unwrap_or(Table::Processes)
+    fn filter_table(&self) -> TableKind {
+        self.table().unwrap_or(TableKind::Processes)
     }
 
     pub fn active_filter(&self) -> &str {
         match self.filter_table() {
-            Table::Processes => &self.process_view.filter,
-            Table::Ports => &self.port_view.filter,
+            TableKind::Processes => &self.process_view.filter,
+            TableKind::Ports => &self.port_view.filter,
         }
     }
 
     fn active_filter_mut(&mut self) -> &mut String {
         match self.filter_table() {
-            Table::Processes => &mut self.process_view.filter,
-            Table::Ports => &mut self.port_view.filter,
+            TableKind::Processes => &mut self.process_view.filter,
+            TableKind::Ports => &mut self.port_view.filter,
         }
     }
 
@@ -235,6 +247,51 @@ impl App {
                 }
             }
         }
+    }
+
+    pub fn handle_mouse(&mut self, event: MouseEvent, at: Instant) {
+        let (column, row) = (event.column, event.row);
+        match event.kind {
+            MouseEventKind::Down(button) => {
+                let Some(target) = self.hits.hit(column, row).cloned() else {
+                    self.clicks.reset();
+                    return;
+                };
+                let double =
+                    button == MouseButton::Left && self.clicks.press(self.click_id(&target), at);
+                if let Some(action) = mouse::click_action(&target, button, double) {
+                    self.apply(action);
+                }
+            }
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let up = event.kind == MouseEventKind::ScrollUp;
+                let action = self
+                    .hits
+                    .scroll_target(column, row)
+                    .and_then(|target| mouse::scroll_action(target, up));
+                if let Some(action) = action {
+                    self.apply(action);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn click_id(&self, target: &Target) -> ClickId {
+        match target {
+            Target::ProcessRow(key) | Target::TopProcess(key) => ClickId::Process(*key),
+            Target::PortRow(pos) => match self.port_view.key_at(&self.ports, *pos) {
+                Some(key) => ClickId::Port(key),
+                None => ClickId::Other(target.clone()),
+            },
+            other => ClickId::Other(other.clone()),
+        }
+    }
+
+    /// The hit map describes the previous frame, which no longer matches the screen.
+    pub fn on_resize(&mut self) {
+        self.hits.clear();
+        self.clicks.reset();
     }
 
     pub fn apply(&mut self, action: Action) {
@@ -278,15 +335,15 @@ impl App {
             Action::SelectFirst => self.select_index(0),
             Action::SelectLast => self.select_index(usize::MAX),
             Action::CycleSort => match self.table() {
-                Some(Table::Processes) => self.process_view.cycle_sort(),
-                Some(Table::Ports) => self.port_view.cycle_sort(),
+                Some(TableKind::Processes) => self.process_view.cycle_sort(),
+                Some(TableKind::Ports) => self.port_view.cycle_sort(),
                 None => return,
             },
             Action::ToggleSortDir => match self.table() {
-                Some(Table::Processes) => {
+                Some(TableKind::Processes) => {
                     self.process_view.sort.ascending = !self.process_view.sort.ascending
                 }
-                Some(Table::Ports) => {
+                Some(TableKind::Ports) => {
                     self.port_view.sort.ascending = !self.port_view.sort.ascending
                 }
                 None => return,
@@ -355,12 +412,41 @@ impl App {
                     inspector.scroll = inspector.scroll.saturating_add_signed(delta as i16);
                 }
             }
+            Action::Inspect(key) => self.inspect(key),
+            Action::SelectProcess(key) => self.process_view.select_key(&self.data.processes, key),
+            Action::SelectPortAt(pos) => self.port_view.select_index(&self.ports, pos),
+            Action::InspectPortAt(pos) => {
+                self.port_view.select_index(&self.ports, pos);
+                self.apply(Action::OpenInspector);
+            }
+            Action::ClickProcessColumn(col) => self.process_view.click_column(col),
+            Action::ClickPortColumn(col) => self.port_view.click_column(col),
+            Action::ScrollTable(kind, delta) => match kind {
+                TableKind::Processes => {
+                    let len = self.process_view.order.len();
+                    self.process_view.cursor.scroll(len, delta as i64);
+                }
+                TableKind::Ports => {
+                    let len = self.port_view.order.len();
+                    self.port_view.cursor.scroll(len, delta as i64);
+                }
+            },
+            Action::ContextMenu(target) => self.context_menu(&target),
+            Action::ConfirmKill(confirmed) => self.finish_kill(confirmed),
+            Action::ToggleMouse => {
+                self.mouse_capture = !self.mouse_capture;
+                self.set_status(if self.mouse_capture {
+                    "Mouse on".into()
+                } else {
+                    "Mouse off: drag to select text, m to turn it back on".into()
+                });
+            }
         }
         if let Some(table) = resorted {
             self.rebuild_views();
             self.set_status(match table {
-                Table::Processes => self.process_view.sort_label(),
-                Table::Ports => self.port_view.sort_label(),
+                TableKind::Processes => self.process_view.sort_label(),
+                TableKind::Ports => self.port_view.sort_label(),
             });
         }
     }
@@ -369,8 +455,8 @@ impl App {
     /// the selected port.
     fn selected_target(&self) -> Option<ProcKey> {
         match self.table()? {
-            Table::Processes => self.selected_process().map(|p| p.key),
-            Table::Ports => {
+            TableKind::Processes => self.selected_process().map(|p| p.key),
+            TableKind::Ports => {
                 let pid = self.selected_port()?.pid?;
                 self.data
                     .processes
@@ -410,16 +496,18 @@ impl App {
 
     fn select_index(&mut self, index: usize) {
         match self.table() {
-            Some(Table::Processes) => self.process_view.select_index(&self.data.processes, index),
-            Some(Table::Ports) => self.port_view.select_index(&self.ports, index),
+            Some(TableKind::Processes) => {
+                self.process_view.select_index(&self.data.processes, index)
+            }
+            Some(TableKind::Ports) => self.port_view.select_index(&self.ports, index),
             None => {}
         }
     }
 
     fn move_selection(&mut self, delta: i64) {
         match self.table() {
-            Some(Table::Processes) => self.process_view.move_by(&self.data.processes, delta),
-            Some(Table::Ports) => self.port_view.move_by(&self.ports, delta),
+            Some(TableKind::Processes) => self.process_view.move_by(&self.data.processes, delta),
+            Some(TableKind::Ports) => self.port_view.move_by(&self.ports, delta),
             None => {}
         }
     }
@@ -434,7 +522,7 @@ impl App {
             KeyCode::Enter => {
                 self.input_mode = InputMode::Normal;
                 let line = std::mem::take(&mut self.command_input);
-                match command::parse(&line, self.table() == Some(Table::Ports)) {
+                match command::parse(&line, self.table() == Some(TableKind::Ports)) {
                     Ok(Some(action)) => self.apply(action),
                     Ok(None) => {}
                     Err(msg) => self.set_status(msg),
@@ -469,13 +557,34 @@ impl App {
     }
 
     fn handle_confirm_kill(&mut self, key: KeyEvent) {
-        if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
-            if let Some((pid, label)) = self.confirm_kill.take() {
+        self.finish_kill(matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')));
+    }
+
+    fn finish_kill(&mut self, confirmed: bool) {
+        if let Some((pid, label)) = self.confirm_kill.take() {
+            if confirmed {
                 self.collector.send(Request::Kill { pid, label });
             }
         }
-        self.confirm_kill = None;
         self.input_mode = InputMode::Normal;
+    }
+
+    fn context_menu(&mut self, target: &Target) {
+        let key = match target {
+            Target::ProcessRow(key) | Target::TopProcess(key) | Target::InspectorLink(key) => {
+                Some(*key)
+            }
+            Target::PortRow(pos) => {
+                self.port_view.select_index(&self.ports, *pos);
+                self.selected_target()
+            }
+            _ => None,
+        };
+        let Some(row) = key.and_then(|k| self.data.processes.iter().find(|p| p.key == k)) else {
+            return;
+        };
+        self.confirm_kill = Some((row.pid(), row.name.to_string()));
+        self.input_mode = InputMode::ConfirmKill;
     }
 
     fn kill_by_port(&mut self, port: u16) {
@@ -544,18 +653,14 @@ impl App {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Table {
-    Processes,
-    Ports,
-}
-
 /// Which table a sort action reorders, if any; those all need a rebuild and a status
 /// line naming the new order.
-fn sort_target(action: &Action, current: Option<Table>) -> Option<Table> {
+fn sort_target(action: &Action, current: Option<TableKind>) -> Option<TableKind> {
     match action {
-        Action::SortProcesses(_) => Some(Table::Processes),
-        Action::SortPorts(_) => Some(Table::Ports),
+        Action::SortProcesses(_) => Some(TableKind::Processes),
+        Action::SortPorts(_) => Some(TableKind::Ports),
+        Action::ClickProcessColumn(_) => Some(TableKind::Processes),
+        Action::ClickPortColumn(_) => Some(TableKind::Ports),
         Action::CycleSort | Action::ToggleSortDir => current,
         _ => None,
     }
