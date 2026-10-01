@@ -11,7 +11,7 @@ use ratatui::{
 
 use super::hit::{HitMap, Target};
 use crate::app::App;
-use crate::collectors::inspect::{Account, Field, Missing, ProcessDetail};
+use crate::collectors::inspect::{Account, Extras, Field, Missing, ProcessDetail};
 use crate::theme;
 use crate::types::{format_bytes, format_elapsed, format_utc};
 use crate::views::inspector::{ChainEnd, InspectorView, Link};
@@ -144,6 +144,17 @@ fn body_lines(view: &InspectorView) -> (Vec<Line<'static>>, Vec<u16>) {
         ownership(&mut out, d, view);
     }
 
+    #[cfg(target_os = "linux")]
+    if let Some(
+        d @ ProcessDetail {
+            extras: Extras::Linux(e),
+            ..
+        },
+    ) = detail
+    {
+        linux::head(&mut out, d, e);
+    }
+
     out.section("Lineage");
     lineage(&mut out, view);
 
@@ -158,6 +169,11 @@ fn body_lines(view: &InspectorView) -> (Vec<Line<'static>>, Vec<u16>) {
 
     if let Some(d) = detail {
         ports(&mut out, d);
+        match &d.extras {
+            Extras::None => {}
+            #[cfg(target_os = "linux")]
+            Extras::Linux(e) => linux::tail(&mut out, e),
+        }
         environment(&mut out, d, view.show_env);
     }
     (out.lines, out.links)
@@ -214,6 +230,128 @@ fn lineage(out: &mut Body, view: &InspectorView) {
         ChainEnd::PidReused(pid) => out.warn(&format!(
             "parent {pid} exited and its pid now belongs to a newer process"
         )),
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use ratatui::text::Span;
+
+    use super::{account, field, missing_span, warn_style, Body};
+    use crate::collectors::inspect::linux::{Capabilities, Extras};
+    use crate::collectors::inspect::ProcessDetail;
+    use crate::theme;
+    use crate::types::format_bytes;
+
+    pub fn head(out: &mut Body, d: &ProcessDetail, e: &Extras) {
+        match &e.login_user {
+            Ok(Some(login)) => {
+                let mut spans = account(&Ok(login.clone()));
+                if d.user.as_ref().is_ok_and(|u| u.id != login.id) {
+                    spans.push(Span::styled(
+                        "  runs as another user (sudo, su or a setuid binary)",
+                        warn_style(),
+                    ));
+                }
+                out.field("Login user", spans);
+            }
+            Ok(None) => out.field(
+                "Login user",
+                vec![Span::styled(
+                    "none: not started from a login session",
+                    theme::dim_style(),
+                )],
+            ),
+            Err(m) => out.field("Login user", vec![missing_span(*m)]),
+        }
+
+        out.section("Service");
+        match &e.cgroup {
+            Ok(cg) => {
+                let text = |v: &Option<String>| match v {
+                    Some(v) => vec![Span::styled(v.clone(), theme::text_style())],
+                    None => vec![Span::styled("-", theme::dim_style())],
+                };
+                out.field("Unit", text(&cg.unit));
+                out.field("Slice", text(&cg.slice));
+                if let Some(c) = &cg.container {
+                    let mut spans = vec![
+                        Span::styled(format!("{} ", c.runtime), theme::text_style()),
+                        Span::styled(c.id.chars().take(12).collect::<String>(), warn_style()),
+                    ];
+                    if let Some(pod) = &c.pod {
+                        spans.push(Span::styled(format!("  pod {pod}"), theme::dim_style()));
+                    }
+                    out.field("Container", spans);
+                }
+                out.field(
+                    "Cgroup",
+                    vec![Span::styled(cg.path.clone(), theme::dim_style())],
+                );
+            }
+            Err(m) => out.field("Cgroup", vec![missing_span(*m)]),
+        }
+    }
+
+    pub fn tail(out: &mut Body, e: &Extras) {
+        out.section("Isolation");
+        out.field(
+            "Namespaces",
+            match &e.own_namespaces {
+                Ok(own) if own.is_empty() => {
+                    vec![Span::styled("shared with pulsemon", theme::text_style())]
+                }
+                Ok(own) => vec![Span::styled(
+                    format!("own {}", own.join(", ")),
+                    warn_style(),
+                )],
+                Err(m) => vec![missing_span(*m)],
+            },
+        );
+        out.field(
+            "Capabilities",
+            match &e.capabilities {
+                Ok(Capabilities::None) => vec![Span::styled("none", theme::text_style())],
+                Ok(Capabilities::Full) => vec![Span::styled("all", warn_style())],
+                Ok(Capabilities::Some(caps)) => {
+                    vec![Span::styled(caps.join(", "), warn_style())]
+                }
+                Err(m) => vec![missing_span(*m)],
+            },
+        );
+
+        out.section("Resources");
+        out.field("Threads", field(&e.threads));
+        let mut files = field(&e.fd_count);
+        if let Ok(limit) = &e.open_files {
+            files.push(Span::styled(
+                format!("  limit {} soft, {} hard", limit.soft, limit.hard),
+                theme::dim_style(),
+            ));
+        }
+        out.field("Open fds", files);
+        out.field("Nice", field(&e.nice));
+        let mut oom = field(&e.oom_score);
+        if let Ok(adj) = e.oom_score_adj {
+            oom.push(Span::styled(format!("  adj {adj}"), theme::dim_style()));
+        }
+        out.field("OOM score", oom);
+        let mut pss = field(&e.pss.map(format_bytes));
+        if let Ok(swap) = e.swap {
+            pss.push(Span::styled(
+                format!("  swap {}", format_bytes(swap)),
+                theme::dim_style(),
+            ));
+        }
+        out.field("PSS", pss);
+        out.field(
+            "TTY",
+            match &e.tty {
+                Ok(Some(tty)) => vec![Span::styled(tty.clone(), theme::text_style())],
+                Ok(None) => vec![Span::styled("none", theme::dim_style())],
+                Err(m) => vec![missing_span(*m)],
+            },
+        );
     }
 }
 

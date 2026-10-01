@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-mod linux;
+pub mod linux;
 
 #[cfg(not(target_os = "linux"))]
 use std::time::Duration;
@@ -40,7 +40,19 @@ pub struct ProcessDetail {
     pub group: Field<Account>,
     pub session: Field<u32>,
     pub ports: Field<Vec<PortInfo>>,
+    pub extras: Extras,
 }
+
+/// Platform-specific sections of the inspector.
+#[derive(Debug, Clone)]
+pub enum Extras {
+    None,
+    #[cfg(target_os = "linux")]
+    Linux(Box<linux::Extras>),
+}
+
+#[cfg(target_os = "linux")]
+const EXTRAS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[cfg(not(target_os = "linux"))]
 const PORT_SCAN_INTERVAL: Duration = Duration::from_secs(5);
@@ -54,6 +66,9 @@ pub struct DetailCollector {
     target: Option<ProcKey>,
     #[cfg(not(target_os = "linux"))]
     ports_cache: Option<(Instant, Field<Vec<PortInfo>>)>,
+    /// Extras read many small files, so they refresh less often than the tick.
+    #[cfg(target_os = "linux")]
+    extras_cache: Option<(ProcKey, linux::Extras)>,
 }
 
 impl DetailCollector {
@@ -64,6 +79,8 @@ impl DetailCollector {
             target: None,
             #[cfg(not(target_os = "linux"))]
             ports_cache: None,
+            #[cfg(target_os = "linux")]
+            extras_cache: None,
         }
     }
 
@@ -134,12 +151,25 @@ impl DetailCollector {
                 .map(|s| s.as_u32())
                 .ok_or(Missing::Unavailable),
             ports: Err(Missing::Unavailable),
+            extras: Extras::None,
         };
 
         #[cfg(target_os = "linux")]
         {
             let _ = scanner;
             linux::read_common(key.pid, &mut detail);
+            let stale = match &self.extras_cache {
+                Some((cached, extras)) => {
+                    *cached != key || extras.collected.elapsed() >= EXTRAS_INTERVAL
+                }
+                None => true,
+            };
+            if stale {
+                self.extras_cache = Some((key, linux::read_extras(key.pid, users)));
+            }
+            if let Some((_, extras)) = &self.extras_cache {
+                detail.extras = Extras::Linux(Box::new(extras.clone()));
+            }
         }
         #[cfg(not(target_os = "linux"))]
         {

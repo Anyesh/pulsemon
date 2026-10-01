@@ -52,6 +52,21 @@ impl UserNames {
         }
     }
 
+    /// For ids that come from somewhere other than sysinfo, such as loginuid.
+    #[cfg(target_os = "linux")]
+    pub fn resolve_raw(&mut self, uid: u32, now: Instant) -> Arc<str> {
+        let found = self
+            .users
+            .list()
+            .iter()
+            .find(|u| **u.id() == uid)
+            .map(|u| u.id().clone());
+        match found {
+            Some(id) => self.resolve(Some(&id), now),
+            None => Arc::from(uid.to_string()),
+        }
+    }
+
     pub fn group(&self, gid: &Gid) -> Option<&str> {
         self.groups
             .list()
