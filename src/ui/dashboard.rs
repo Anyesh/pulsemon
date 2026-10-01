@@ -30,7 +30,7 @@ fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect) {
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
 
     // CPU gauge
-    let cpu_usage = app.cpu_metrics.global_usage as f64;
+    let cpu_usage = app.system.cpu().global_usage as f64;
     let cpu_ratio = (cpu_usage / 100.0).clamp(0.0, 1.0);
     let cpu_gauge = Gauge::default()
         .block(
@@ -53,9 +53,9 @@ fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(cpu_gauge, cpu_area);
 
     // Memory gauge
-    let mem_total = app.memory_metrics.total as f64;
+    let mem_total = app.system.memory().total as f64;
     let mem_ratio = if mem_total > 0.0 {
-        (app.memory_metrics.used as f64 / mem_total).clamp(0.0, 1.0)
+        (app.system.memory().used as f64 / mem_total).clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -79,8 +79,8 @@ fn render_top_gauges(frame: &mut Frame, app: &App, area: Rect) {
         .ratio(mem_ratio)
         .label(format!(
             "{} / {} ({:.1}%)",
-            format_bytes(app.memory_metrics.used),
-            format_bytes(app.memory_metrics.total),
+            format_bytes(app.system.memory().used),
+            format_bytes(app.system.memory().total),
             mem_pct
         ));
     frame.render_widget(mem_gauge, mem_area);
@@ -90,7 +90,7 @@ fn render_sparklines(frame: &mut Frame, app: &App, area: Rect) {
     let [cpu_area, mem_area] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
 
-    let cpu_data: Vec<u64> = app.cpu_metrics.history.iter().map(|v| *v as u64).collect();
+    let cpu_data: Vec<u64> = app.system.cpu().history.iter().map(|v| *v as u64).collect();
     let cpu_sparkline = Sparkline::default()
         .block(
             Block::bordered()
@@ -104,7 +104,8 @@ fn render_sparklines(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(cpu_sparkline, cpu_area);
 
     let mem_data: Vec<u64> = app
-        .memory_metrics
+        .system
+        .memory()
         .history
         .iter()
         .map(|v| *v as u64)
@@ -134,7 +135,7 @@ fn render_disk_gpu(frame: &mut Frame, app: &App, area: Rect) {
     let disk_inner = disk_block.inner(disk_area);
     frame.render_widget(disk_block, disk_area);
 
-    let disk_count = app.disk_metrics.len().min(3);
+    let disk_count = app.system.disks().len().min(3);
     if disk_count > 0 {
         let constraints: Vec<Constraint> = (0..disk_count)
             .map(|_| Constraint::Length(1))
@@ -142,7 +143,7 @@ fn render_disk_gpu(frame: &mut Frame, app: &App, area: Rect) {
             .collect();
         let disk_rows = Layout::vertical(constraints).split(disk_inner);
 
-        for (i, disk) in app.disk_metrics.iter().take(3).enumerate() {
+        for (i, disk) in app.system.disks().iter().take(3).enumerate() {
             let total = disk.total as f64;
             let ratio = if total > 0.0 {
                 (disk.used as f64 / total).clamp(0.0, 1.0)
@@ -213,10 +214,12 @@ fn render_mini_process_table(frame: &mut Frame, app: &App, area: Rect) {
     ])
     .style(theme::header_style());
 
+    let procs = app.processes.rows();
     let rows: Vec<Row> = app
-        .processes
+        .process_view
+        .top
         .iter()
-        .take(8)
+        .map(|&i| &procs[i])
         .enumerate()
         .map(|(i, p)| {
             let style = if i % 2 == 1 {
@@ -225,8 +228,8 @@ fn render_mini_process_table(frame: &mut Frame, app: &App, area: Rect) {
                 theme::text_style()
             };
             Row::new(vec![
-                Cell::from(p.pid.to_string()),
-                Cell::from(p.name.clone()),
+                Cell::from(p.pid().to_string()),
+                Cell::from(p.name.as_str()),
                 Cell::from(format!("{:.1}", p.cpu_usage)),
                 Cell::from(format_bytes(p.memory)),
             ])

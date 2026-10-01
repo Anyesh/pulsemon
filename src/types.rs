@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 const HISTORY_CAPACITY: usize = 60;
 
@@ -67,14 +68,35 @@ pub struct DiskInfo {
 // Process
 // ---------------------------------------------------------------------------
 
+/// Identifies one process across its lifetime. A pid alone is not enough because
+/// the OS reuses pids, so a table selection or a pending signal keyed by pid could
+/// land on an unrelated process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProcKey {
+    pub pid: u32,
+    pub start_time: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
-    pub pid: u32,
+    pub key: ProcKey,
+    pub parent: Option<u32>,
     pub name: String,
+    pub name_lower: String,
+    pub command: String,
+    pub command_lower: String,
+    pub user: Arc<str>,
     pub cpu_usage: f32,
     pub memory: u64,
-    pub status: String,
-    pub command: String,
+    /// Bytes read plus written per second over the last refresh interval.
+    pub disk_rate: u64,
+    pub status: &'static str,
+}
+
+impl ProcessInfo {
+    pub fn pid(&self) -> u32 {
+        self.key.pid
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

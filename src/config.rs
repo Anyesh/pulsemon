@@ -14,4 +14,8 @@ pub struct Config {
     /// Disable port monitoring
     #[arg(long)]
     pub no_ports: bool,
+
+    /// Show how long each refresh takes in the status bar
+    #[arg(long)]
+    pub debug_timing: bool,
 }

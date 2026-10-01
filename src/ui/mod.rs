@@ -82,6 +82,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             Span::styled(":jump", theme::dim_style()),
         ])
     };
+    let mut status_line = status_line;
+    if let Some(cost) = app.tick_cost {
+        status_line.push_span(Span::styled(
+            format!(" tick {:.1}ms", cost.as_secs_f64() * 1000.0),
+            Style::new().fg(theme::ORANGE_BRIGHT),
+        ));
+    }
     let status = Paragraph::new(status_line).style(Style::new().bg(theme::BG_HIGHLIGHT));
     frame.render_widget(status, status_area);
 

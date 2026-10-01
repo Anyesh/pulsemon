@@ -11,8 +11,7 @@ use crate::theme;
 use crate::types::PortSortBy;
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let filtered = app.filtered_ports();
-    let count = filtered.len();
+    let count = app.port_view.order.len();
 
     let arrow_up = " \u{25b2}";
     let arrow_down = " \u{25bc}";
@@ -44,8 +43,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     ])
     .height(1);
 
-    let rows: Vec<Row> = filtered
+    let rows: Vec<Row> = app
+        .port_view
+        .order
         .iter()
+        .map(|&i| &app.ports[i])
         .enumerate()
         .map(|(i, p)| {
             let row = Row::new(vec![

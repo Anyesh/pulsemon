@@ -11,8 +11,8 @@ use crate::theme;
 use crate::types::{format_bytes, ProcessSortBy};
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let filtered = app.filtered_processes();
-    let count = filtered.len();
+    let procs = app.processes.rows();
+    let count = app.process_view.order.len();
 
     let arrow_up = " \u{25b2}";
     let arrow_down = " \u{25bc}";
@@ -35,28 +35,38 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let header = Row::new(vec![
         make_header("PID", app.process_view.sort_by == ProcessSortBy::Pid),
+        Cell::from(Span::styled("User", theme::header_style())),
         make_header("Name", app.process_view.sort_by == ProcessSortBy::Name),
         make_header("CPU%", app.process_view.sort_by == ProcessSortBy::Cpu),
         make_header("Memory", app.process_view.sort_by == ProcessSortBy::Memory),
+        Cell::from(Span::styled("Disk I/O", theme::header_style())),
         Cell::from(Span::styled("Status", theme::header_style())),
         Cell::from(Span::styled("Command", theme::header_style())),
     ])
     .height(1);
 
-    let rows: Vec<Row> = filtered
+    let rows: Vec<Row> = app
+        .process_view
+        .order
         .iter()
+        .map(|&i| &procs[i])
         .enumerate()
         .map(|(i, p)| {
             let row = Row::new(vec![
-                Cell::from(Span::styled(p.pid.to_string(), theme::text_style())),
-                Cell::from(Span::styled(p.name.clone(), theme::text_style())),
+                Cell::from(Span::styled(p.pid().to_string(), theme::text_style())),
+                Cell::from(Span::styled(&*p.user, theme::dim_style())),
+                Cell::from(Span::styled(p.name.as_str(), theme::text_style())),
                 Cell::from(Span::styled(
                     format!("{:.1}%", p.cpu_usage),
                     theme::text_style(),
                 )),
                 Cell::from(Span::styled(format_bytes(p.memory), theme::text_style())),
-                Cell::from(Span::styled(p.status.clone(), theme::dim_style())),
-                Cell::from(Span::styled(p.command.clone(), theme::dim_style())),
+                Cell::from(Span::styled(
+                    format!("{}/s", format_bytes(p.disk_rate)),
+                    theme::dim_style(),
+                )),
+                Cell::from(Span::styled(p.status, theme::dim_style())),
+                Cell::from(Span::styled(p.command.as_str(), theme::dim_style())),
             ]);
             if i % 2 == 0 {
                 row
@@ -93,9 +103,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         rows,
         [
             Constraint::Length(7),
+            Constraint::Length(10),
             Constraint::Length(22),
             Constraint::Length(8),
             Constraint::Length(10),
+            Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Fill(1),
         ],

@@ -27,9 +27,9 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     .areas(inner);
 
     // RAM usage gauge
-    let mem_total = app.memory_metrics.total as f64;
+    let mem_total = app.system.memory().total as f64;
     let mem_ratio = if mem_total > 0.0 {
-        (app.memory_metrics.used as f64 / mem_total).clamp(0.0, 1.0)
+        (app.system.memory().used as f64 / mem_total).clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -51,16 +51,16 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .ratio(mem_ratio)
         .label(format!(
             "{} / {} ({:.1}%)",
-            format_bytes(app.memory_metrics.used),
-            format_bytes(app.memory_metrics.total),
+            format_bytes(app.system.memory().used),
+            format_bytes(app.system.memory().total),
             mem_pct
         ));
     frame.render_widget(ram_gauge, ram_area);
 
     // Swap usage gauge
-    let swap_total = app.memory_metrics.swap_total as f64;
+    let swap_total = app.system.memory().swap_total as f64;
     let swap_ratio = if swap_total > 0.0 {
-        (app.memory_metrics.swap_used as f64 / swap_total).clamp(0.0, 1.0)
+        (app.system.memory().swap_used as f64 / swap_total).clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -82,15 +82,16 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .ratio(swap_ratio)
         .label(format!(
             "{} / {} ({:.1}%)",
-            format_bytes(app.memory_metrics.swap_used),
-            format_bytes(app.memory_metrics.swap_total),
+            format_bytes(app.system.memory().swap_used),
+            format_bytes(app.system.memory().swap_total),
             swap_pct
         ));
     frame.render_widget(swap_gauge, swap_area);
 
     // Memory history sparkline
     let mem_data: Vec<u64> = app
-        .memory_metrics
+        .system
+        .memory()
         .history
         .iter()
         .map(|v| *v as u64)
@@ -114,22 +115,24 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .title(Span::styled(" System Totals ", theme::title_style()));
 
     let free_ram = app
-        .memory_metrics
+        .system
+        .memory()
         .total
-        .saturating_sub(app.memory_metrics.used);
+        .saturating_sub(app.system.memory().used);
     let free_swap = app
-        .memory_metrics
+        .system
+        .memory()
         .swap_total
-        .saturating_sub(app.memory_metrics.swap_used);
+        .saturating_sub(app.system.memory().swap_used);
 
     let totals_text = vec![
         Line::from(vec![
             Span::styled("Total RAM:  ", theme::dim_style()),
-            Span::styled(format_bytes(app.memory_metrics.total), theme::text_style()),
+            Span::styled(format_bytes(app.system.memory().total), theme::text_style()),
         ]),
         Line::from(vec![
             Span::styled("Used RAM:   ", theme::dim_style()),
-            Span::styled(format_bytes(app.memory_metrics.used), theme::text_style()),
+            Span::styled(format_bytes(app.system.memory().used), theme::text_style()),
         ]),
         Line::from(vec![
             Span::styled("Free RAM:   ", theme::dim_style()),
@@ -139,14 +142,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         Line::from(vec![
             Span::styled("Total Swap: ", theme::dim_style()),
             Span::styled(
-                format_bytes(app.memory_metrics.swap_total),
+                format_bytes(app.system.memory().swap_total),
                 theme::text_style(),
             ),
         ]),
         Line::from(vec![
             Span::styled("Used Swap:  ", theme::dim_style()),
             Span::styled(
-                format_bytes(app.memory_metrics.swap_used),
+                format_bytes(app.system.memory().swap_used),
                 theme::text_style(),
             ),
         ]),

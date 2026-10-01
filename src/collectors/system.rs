@@ -1,13 +1,19 @@
-use sysinfo::{Disks, System};
+use std::time::{Duration, Instant};
+
+use sysinfo::{DiskRefreshKind, Disks, System};
 
 use crate::types::{CpuMetrics, DiskInfo, MemoryMetrics};
 
 const HISTORY_LEN: usize = 60;
+const DISK_LIST_INTERVAL: Duration = Duration::from_secs(10);
 
 pub struct SystemCollector {
     sys: System,
+    disks: Disks,
+    disks_listed_at: Instant,
     cpu_metrics: CpuMetrics,
     memory_metrics: MemoryMetrics,
+    disk_metrics: Vec<DiskInfo>,
 }
 
 impl SystemCollector {
@@ -15,106 +21,114 @@ impl SystemCollector {
         let mut sys = System::new();
         // Perform an initial CPU refresh so the *next* call returns real data.
         sys.refresh_cpu_usage();
+        let disks = Disks::new_with_refreshed_list_specifics(storage_only());
 
-        Self {
+        let mut collector = Self {
             sys,
+            disks,
+            disks_listed_at: Instant::now(),
             cpu_metrics: CpuMetrics::default(),
             memory_metrics: MemoryMetrics::default(),
-        }
+            disk_metrics: Vec::new(),
+        };
+        collector.rebuild_disk_metrics();
+        collector
     }
 
-    /// Refresh CPU and memory information from the OS.
     pub fn refresh(&mut self) {
         self.sys.refresh_cpu_usage();
         self.sys.refresh_memory();
+        self.update_cpu();
+        self.update_memory();
+        self.refresh_disks();
     }
 
-    /// Return up-to-date CPU metrics.
-    ///
-    /// Reads per-core usage from `sysinfo`, computes the global average,
-    /// appends it to the rolling history (capped at 60 samples), and
-    /// fetches the CPU brand name from the first core.
-    pub fn cpu_metrics(&mut self) -> &CpuMetrics {
-        let cpus = self.sys.cpus();
-
-        // Per-core usage
-        let per_core: Vec<f32> = cpus.iter().map(|c| c.cpu_usage()).collect();
-
-        // Global average
-        let global_usage = if per_core.is_empty() {
-            0.0
-        } else {
-            per_core.iter().sum::<f32>() / per_core.len() as f32
-        };
-
-        // History (ring-buffer style, max 60 entries)
-        if self.cpu_metrics.history.len() >= HISTORY_LEN {
-            self.cpu_metrics.history.pop_front();
-        }
-        self.cpu_metrics.history.push_back(global_usage);
-
-        // CPU brand name from the first core
-        let cpu_name = cpus
-            .first()
-            .map(|c| c.brand().to_string())
-            .unwrap_or_default();
-
-        self.cpu_metrics.global_usage = global_usage;
-        self.cpu_metrics.per_core = per_core;
-        self.cpu_metrics.cpu_name = cpu_name;
-
+    pub fn cpu(&self) -> &CpuMetrics {
         &self.cpu_metrics
     }
 
-    /// Return up-to-date memory metrics.
-    ///
-    /// Reads total/used RAM and swap from `sysinfo`, computes a usage
-    /// percentage, and appends it to the rolling history.
-    pub fn memory_metrics(&mut self) -> &MemoryMetrics {
-        let total = self.sys.total_memory();
-        let used = self.sys.used_memory();
-        let swap_total = self.sys.total_swap();
-        let swap_used = self.sys.used_swap();
-
-        // Usage percentage for the history sparkline
-        let usage_pct = if total > 0 {
-            (used as f32 / total as f32) * 100.0
-        } else {
-            0.0
-        };
-
-        if self.memory_metrics.history.len() >= HISTORY_LEN {
-            self.memory_metrics.history.pop_front();
-        }
-        self.memory_metrics.history.push_back(usage_pct);
-
-        self.memory_metrics.total = total;
-        self.memory_metrics.used = used;
-        self.memory_metrics.swap_total = swap_total;
-        self.memory_metrics.swap_used = swap_used;
-
+    pub fn memory(&self) -> &MemoryMetrics {
         &self.memory_metrics
     }
 
-    /// Return a snapshot of all mounted disks.
-    pub fn disk_metrics(&self) -> Vec<DiskInfo> {
-        let disks = Disks::new_with_refreshed_list();
-
-        disks
-            .iter()
-            .map(|d| {
-                let total = d.total_space();
-                let available = d.available_space();
-                let used = total.saturating_sub(available);
-
-                DiskInfo {
-                    name: d.name().to_string_lossy().to_string(),
-                    mount_point: d.mount_point().to_string_lossy().to_string(),
-                    total,
-                    used,
-                    fs_type: d.file_system().to_string_lossy().to_string(),
-                }
-            })
-            .collect()
+    pub fn disks(&self) -> &[DiskInfo] {
+        &self.disk_metrics
     }
+
+    fn update_cpu(&mut self) {
+        let cpus = self.sys.cpus();
+        let metrics = &mut self.cpu_metrics;
+
+        metrics.per_core.clear();
+        metrics.per_core.extend(cpus.iter().map(|c| c.cpu_usage()));
+        metrics.global_usage = if metrics.per_core.is_empty() {
+            0.0
+        } else {
+            metrics.per_core.iter().sum::<f32>() / metrics.per_core.len() as f32
+        };
+        push_history(&mut metrics.history, metrics.global_usage);
+
+        if metrics.cpu_name.is_empty() {
+            if let Some(cpu) = cpus.first() {
+                metrics.cpu_name = cpu.brand().to_string();
+            }
+        }
+    }
+
+    fn update_memory(&mut self) {
+        let metrics = &mut self.memory_metrics;
+        metrics.total = self.sys.total_memory();
+        metrics.used = self.sys.used_memory();
+        metrics.swap_total = self.sys.total_swap();
+        metrics.swap_used = self.sys.used_swap();
+
+        let usage_pct = if metrics.total > 0 {
+            (metrics.used as f32 / metrics.total as f32) * 100.0
+        } else {
+            0.0
+        };
+        push_history(&mut metrics.history, usage_pct);
+    }
+
+    /// Re-reads the mount table only every few seconds; in between, each known disk
+    /// just has its space figures refreshed.
+    fn refresh_disks(&mut self) {
+        if self.disks_listed_at.elapsed() >= DISK_LIST_INTERVAL {
+            self.disks.refresh_specifics(true, storage_only());
+            self.disks_listed_at = Instant::now();
+            self.rebuild_disk_metrics();
+            return;
+        }
+        for (disk, info) in self.disks.list_mut().iter_mut().zip(&mut self.disk_metrics) {
+            disk.refresh_specifics(storage_only());
+            info.total = disk.total_space();
+            info.used = disk.total_space().saturating_sub(disk.available_space());
+        }
+    }
+
+    fn rebuild_disk_metrics(&mut self) {
+        self.disk_metrics = self
+            .disks
+            .list()
+            .iter()
+            .map(|d| DiskInfo {
+                name: d.name().to_string_lossy().into_owned(),
+                mount_point: d.mount_point().to_string_lossy().into_owned(),
+                total: d.total_space(),
+                used: d.total_space().saturating_sub(d.available_space()),
+                fs_type: d.file_system().to_string_lossy().into_owned(),
+            })
+            .collect();
+    }
+}
+
+fn storage_only() -> DiskRefreshKind {
+    DiskRefreshKind::nothing().with_storage()
+}
+
+fn push_history(history: &mut std::collections::VecDeque<f32>, value: f32) {
+    if history.len() >= HISTORY_LEN {
+        history.pop_front();
+    }
+    history.push_back(value);
 }
