@@ -1,12 +1,12 @@
-mod dashboard;
+mod command_palette;
 mod cpu_detail;
-mod memory_detail;
+mod dashboard;
 mod disk_detail;
 mod gpu_detail;
-mod process_table;
-mod port_table;
-mod command_palette;
 mod help;
+mod memory_detail;
+mod port_table;
+mod process_table;
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -55,7 +55,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Status bar
     let status_line = if let Some(msg) = app.status_text() {
-        Line::from(Span::styled(format!(" {} ", msg), Style::new().fg(theme::ORANGE)))
+        Line::from(Span::styled(
+            format!(" {} ", msg),
+            Style::new().fg(theme::ORANGE),
+        ))
     } else {
         let rate = app.tick_rate.as_millis();
         Line::from(vec![
@@ -79,8 +82,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             Span::styled(":jump", theme::dim_style()),
         ])
     };
-    let status = Paragraph::new(status_line)
-        .style(Style::new().bg(theme::BG_HIGHLIGHT));
+    let status = Paragraph::new(status_line).style(Style::new().bg(theme::BG_HIGHLIGHT));
     frame.render_widget(status, status_area);
 
     // Overlays
@@ -142,7 +144,9 @@ fn render_kill_confirm(frame: &mut Frame, app: &App) {
 
         let title = Line::from(Span::styled(
             " Confirm Kill ",
-            Style::new().fg(theme::RED).add_modifier(ratatui::style::Modifier::BOLD),
+            Style::new()
+                .fg(theme::RED)
+                .add_modifier(ratatui::style::Modifier::BOLD),
         ));
 
         let block = Block::bordered()

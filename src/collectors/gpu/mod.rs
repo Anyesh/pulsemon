@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::types::GpuMetrics;
+use anyhow::Result;
 
 pub trait GpuBackend: Send {
     fn name(&self) -> &str;
@@ -12,10 +12,10 @@ mod nvidia;
 
 #[cfg(target_os = "linux")]
 mod amd;
-#[cfg(target_os = "linux")]
-mod intel;
 #[cfg(target_os = "macos")]
 mod apple;
+#[cfg(target_os = "linux")]
+mod intel;
 
 pub fn detect_gpus() -> Vec<Box<dyn GpuBackend>> {
     let mut backends: Vec<Box<dyn GpuBackend>> = Vec::new();

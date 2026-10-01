@@ -1,7 +1,7 @@
+use super::GpuBackend;
+use crate::types::GpuMetrics;
 use anyhow::Result;
 use std::process::Command;
-use crate::types::GpuMetrics;
-use super::GpuBackend;
 
 pub struct IntelBackend {
     cached_metrics: Vec<GpuMetrics>,
@@ -10,10 +10,7 @@ pub struct IntelBackend {
 impl IntelBackend {
     pub fn try_new() -> Option<Self> {
         // Check if intel_gpu_top is available
-        let output = Command::new("which")
-            .arg("intel_gpu_top")
-            .output()
-            .ok()?;
+        let output = Command::new("which").arg("intel_gpu_top").output().ok()?;
         if !output.status.success() {
             return None;
         }
@@ -56,7 +53,9 @@ fn parse_intel_gpu_output(output: &str) -> Vec<GpuMetrics> {
         let line = line.trim();
         if line.contains("\"busy\"") {
             if let Some(colon) = line.find(':') {
-                let val_str = line[colon + 1..].trim().trim_matches(|c| c == ',' || c == ' ');
+                let val_str = line[colon + 1..]
+                    .trim()
+                    .trim_matches(|c| c == ',' || c == ' ');
                 if let Ok(val) = val_str.parse::<f32>() {
                     // Take the highest busy value as overall utilization
                     utilization = Some(utilization.map_or(val, |prev: f32| prev.max(val)));

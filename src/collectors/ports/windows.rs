@@ -1,15 +1,13 @@
+use super::PortScanner;
+use crate::types::PortInfo;
 use anyhow::Result;
 use std::process::Command;
-use crate::types::PortInfo;
-use super::PortScanner;
 
 pub struct WindowsPortScanner;
 
 impl PortScanner for WindowsPortScanner {
     fn scan(&mut self) -> Result<Vec<PortInfo>> {
-        let output = Command::new("netstat")
-            .args(["-ano"])
-            .output()?;
+        let output = Command::new("netstat").args(["-ano"]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut ports = Vec::new();
@@ -44,7 +42,11 @@ fn parse_netstat_line(line: &str) -> Option<PortInfo> {
     };
 
     let (state, pid_str) = if protocol == "TCP" {
-        let state = if parts.len() > 3 { parts[3].to_string() } else { String::new() };
+        let state = if parts.len() > 3 {
+            parts[3].to_string()
+        } else {
+            String::new()
+        };
         let pid_s = if parts.len() > 4 { parts[4] } else { "" };
         (state, pid_s)
     } else {

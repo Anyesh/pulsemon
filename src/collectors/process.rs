@@ -9,9 +9,7 @@ pub struct ProcessCollector {
 
 impl ProcessCollector {
     pub fn new() -> Self {
-        Self {
-            sys: System::new(),
-        }
+        Self { sys: System::new() }
     }
 
     pub fn refresh(&mut self) {

@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Gauge, Paragraph, Sparkline, block::BorderType},
+    widgets::{block::BorderType, Block, Gauge, Paragraph, Sparkline},
     Frame,
 };
 
@@ -89,7 +89,12 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(swap_gauge, swap_area);
 
     // Memory history sparkline
-    let mem_data: Vec<u64> = app.memory_metrics.history.iter().map(|v| *v as u64).collect();
+    let mem_data: Vec<u64> = app
+        .memory_metrics
+        .history
+        .iter()
+        .map(|v| *v as u64)
+        .collect();
     let sparkline = Sparkline::default()
         .block(
             Block::bordered()
@@ -108,8 +113,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .border_style(theme::border_style())
         .title(Span::styled(" System Totals ", theme::title_style()));
 
-    let free_ram = app.memory_metrics.total.saturating_sub(app.memory_metrics.used);
-    let free_swap = app.memory_metrics.swap_total.saturating_sub(app.memory_metrics.swap_used);
+    let free_ram = app
+        .memory_metrics
+        .total
+        .saturating_sub(app.memory_metrics.used);
+    let free_swap = app
+        .memory_metrics
+        .swap_total
+        .saturating_sub(app.memory_metrics.swap_used);
 
     let totals_text = vec![
         Line::from(vec![
@@ -127,11 +138,17 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         Line::from(""),
         Line::from(vec![
             Span::styled("Total Swap: ", theme::dim_style()),
-            Span::styled(format_bytes(app.memory_metrics.swap_total), theme::text_style()),
+            Span::styled(
+                format_bytes(app.memory_metrics.swap_total),
+                theme::text_style(),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Used Swap:  ", theme::dim_style()),
-            Span::styled(format_bytes(app.memory_metrics.swap_used), theme::text_style()),
+            Span::styled(
+                format_bytes(app.memory_metrics.swap_used),
+                theme::text_style(),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Free Swap:  ", theme::dim_style()),

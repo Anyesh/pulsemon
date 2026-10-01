@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Gauge, Paragraph, block::BorderType},
+    widgets::{block::BorderType, Block, Gauge, Paragraph},
     Frame,
 };
 

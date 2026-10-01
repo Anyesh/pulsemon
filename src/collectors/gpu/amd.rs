@@ -1,7 +1,7 @@
+use super::GpuBackend;
+use crate::types::GpuMetrics;
 use anyhow::Result;
 use std::process::Command;
-use crate::types::GpuMetrics;
-use super::GpuBackend;
 
 pub struct AmdBackend {
     cached_metrics: Vec<GpuMetrics>,
@@ -33,7 +33,13 @@ impl GpuBackend for AmdBackend {
 
     fn refresh(&mut self) -> Result<()> {
         let output = Command::new("rocm-smi")
-            .args(["--showuse", "--showmemuse", "--showtemp", "--showpower", "--json"])
+            .args([
+                "--showuse",
+                "--showmemuse",
+                "--showtemp",
+                "--showpower",
+                "--json",
+            ])
             .output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -74,7 +80,9 @@ fn parse_rocm_smi_output(output: &str) -> Vec<GpuMetrics> {
                 // This is percentage, not bytes
                 utilization = utilization.or(Some(val));
             }
-        } else if line.contains("\"Average Graphics Package Power\"") || line.contains("\"Current Socket Graphics Package Power\"") {
+        } else if line.contains("\"Average Graphics Package Power\"")
+            || line.contains("\"Current Socket Graphics Package Power\"")
+        {
             if let Some(val) = extract_number(line) {
                 power_usage = Some(val);
             }
@@ -124,6 +132,8 @@ fn extract_number(line: &str) -> Option<f32> {
     if parts.len() < 2 {
         return None;
     }
-    let value = parts[1].trim().trim_matches(|c| c == '"' || c == ',' || c == ' ');
+    let value = parts[1]
+        .trim()
+        .trim_matches(|c| c == '"' || c == ',' || c == ' ');
     value.parse::<f32>().ok()
 }

@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::Span,
-    widgets::{Block, Gauge, Paragraph, Sparkline, block::BorderType},
+    widgets::{block::BorderType, Block, Gauge, Paragraph, Sparkline},
     Frame,
 };
 
@@ -91,11 +91,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         let r = (u / 100.0).clamp(0.0, 1.0);
 
         let gauge = Gauge::default()
-            .gauge_style(
-                Style::new()
-                    .fg(theme::gauge_color(u))
-                    .bg(theme::GAUGE_BG),
-            )
+            .gauge_style(Style::new().fg(theme::gauge_color(u)).bg(theme::GAUGE_BG))
             .use_unicode(true)
             .ratio(r)
             .label(format!("Core {:>2}: {:.1}%", i, u));

@@ -1,7 +1,7 @@
+use super::PortScanner;
+use crate::types::PortInfo;
 use anyhow::Result;
 use std::process::Command;
-use crate::types::PortInfo;
-use super::PortScanner;
 
 pub struct MacosPortScanner;
 
@@ -18,9 +18,7 @@ impl PortScanner for MacosPortScanner {
 
 fn parse_lsof_output(output: &str) -> Result<Vec<PortInfo>> {
     // Fallback: use simpler lsof output format
-    let output = Command::new("lsof")
-        .args(["-i", "-n", "-P"])
-        .output()?;
+    let output = Command::new("lsof").args(["-i", "-n", "-P"]).output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut ports = Vec::new();
@@ -49,7 +47,10 @@ fn parse_lsof_output(output: &str) -> Result<Vec<PortInfo>> {
             .unwrap_or((String::from("*"), 0));
 
         let state = if parts.len() > 9 {
-            parts[9].trim_start_matches('(').trim_end_matches(')').to_string()
+            parts[9]
+                .trim_start_matches('(')
+                .trim_end_matches(')')
+                .to_string()
         } else {
             String::new()
         };

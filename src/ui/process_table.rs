@@ -19,7 +19,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let make_header = |label: &str, active: bool| -> Cell<'static> {
         if active {
-            let arrow = if app.process_sort_asc { arrow_up } else { arrow_down };
+            let arrow = if app.process_sort_asc {
+                arrow_up
+            } else {
+                arrow_down
+            };
             Cell::from(Line::from(vec![
                 Span::styled(label.to_string(), theme::header_style()),
                 Span::styled(arrow.to_string(), Style::new().fg(theme::ORANGE_BRIGHT)),
@@ -46,7 +50,10 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
             let row = Row::new(vec![
                 Cell::from(Span::styled(p.pid.to_string(), theme::text_style())),
                 Cell::from(Span::styled(p.name.clone(), theme::text_style())),
-                Cell::from(Span::styled(format!("{:.1}%", p.cpu_usage), theme::text_style())),
+                Cell::from(Span::styled(
+                    format!("{:.1}%", p.cpu_usage),
+                    theme::text_style(),
+                )),
                 Cell::from(Span::styled(format_bytes(p.memory), theme::text_style())),
                 Cell::from(Span::styled(p.status.clone(), theme::dim_style())),
                 Cell::from(Span::styled(p.command.clone(), theme::dim_style())),
@@ -67,7 +74,10 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let bottom_title = if !app.filter_input.is_empty() {
         Line::from(vec![
             Span::styled(" filter: ", theme::dim_style()),
-            Span::styled(format!("{} ", app.filter_input), Style::new().fg(theme::ORANGE)),
+            Span::styled(
+                format!("{} ", app.filter_input),
+                Style::new().fg(theme::ORANGE),
+            ),
         ])
     } else {
         Line::default()

@@ -36,11 +36,8 @@ pub fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(block, palette_area);
 
     if let Some(ref err) = app.command_error {
-        let [input_area, error_area] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .areas(inner);
+        let [input_area, error_area] =
+            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(inner);
 
         let input = Paragraph::new(Line::from(vec![
             Span::styled(":", theme::dim_style()),

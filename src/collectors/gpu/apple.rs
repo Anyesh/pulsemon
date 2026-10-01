@@ -1,7 +1,7 @@
+use super::GpuBackend;
+use crate::types::GpuMetrics;
 use anyhow::Result;
 use std::process::Command;
-use crate::types::GpuMetrics;
-use super::GpuBackend;
 
 pub struct AppleBackend {
     gpu_name: String,
@@ -43,7 +43,7 @@ impl GpuBackend for AppleBackend {
         self.cached_metrics = vec![GpuMetrics {
             name: self.gpu_name.clone(),
             utilization,
-            memory_used: None,  // Apple Silicon shares system memory
+            memory_used: None, // Apple Silicon shares system memory
             memory_total: None,
             temperature: None,
             power_usage: None,
@@ -67,7 +67,9 @@ fn extract_gpu_name(ioreg_output: &str) -> Option<String> {
                 let rest = &line[start + 1..];
                 if let Some(eq_pos) = rest.find("= ") {
                     let value = &rest[eq_pos + 2..];
-                    let value = value.trim().trim_matches(|c| c == '"' || c == '<' || c == '>');
+                    let value = value
+                        .trim()
+                        .trim_matches(|c| c == '"' || c == '<' || c == '>');
                     if !value.is_empty() {
                         return Some(value.to_string());
                     }
@@ -95,7 +97,10 @@ fn get_gpu_utilization() -> Option<f32> {
             // Extract percentage from line like "GPU Active: 42%"
             if let Some(pct_pos) = line.find('%') {
                 let before = &line[..pct_pos];
-                let num_start = before.rfind(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(0) + 1;
+                let num_start = before
+                    .rfind(|c: char| !c.is_ascii_digit() && c != '.')
+                    .unwrap_or(0)
+                    + 1;
                 if let Ok(val) = before[num_start..].parse::<f32>() {
                     return Some(val);
                 }

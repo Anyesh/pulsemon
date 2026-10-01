@@ -1,8 +1,8 @@
+use super::GpuBackend;
+use crate::types::GpuMetrics;
 use anyhow::Result;
 use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use nvml_wrapper::Nvml;
-use crate::types::GpuMetrics;
-use super::GpuBackend;
 
 pub struct NvidiaBackend {
     nvml: Nvml,

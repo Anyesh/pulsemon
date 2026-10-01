@@ -48,7 +48,15 @@ impl View {
     }
 
     pub fn titles() -> &'static [&'static str] {
-        &["Dashboard", "CPU", "Memory", "Disk", "GPU", "Processes", "Ports"]
+        &[
+            "Dashboard",
+            "CPU",
+            "Memory",
+            "Disk",
+            "GPU",
+            "Processes",
+            "Ports",
+        ]
     }
 }
 
@@ -164,7 +172,9 @@ impl App {
         self.disk_metrics = self.sys_collector.disk_metrics();
 
         self.proc_collector.refresh();
-        self.processes = self.proc_collector.processes(&self.process_sort_by, self.process_sort_asc);
+        self.processes = self
+            .proc_collector
+            .processes(&self.process_sort_by, self.process_sort_asc);
 
         if let Some(scanner) = &mut self.port_scanner {
             if let Ok(ports) = scanner.scan() {
@@ -188,7 +198,11 @@ impl App {
                 PortSortBy::Pid => a.pid.cmp(&b.pid),
                 PortSortBy::State => a.state.cmp(&b.state),
             };
-            if asc { ord } else { ord.reverse() }
+            if asc {
+                ord
+            } else {
+                ord.reverse()
+            }
         });
     }
 
@@ -284,7 +298,11 @@ impl App {
                 self.filter_input.clear();
             }
             KeyCode::BackTab => {
-                let idx = if self.view.index() == 0 { 6 } else { self.view.index() - 1 };
+                let idx = if self.view.index() == 0 {
+                    6
+                } else {
+                    self.view.index() - 1
+                };
                 self.view = View::from_index(idx);
                 self.filter_input.clear();
             }
@@ -295,10 +313,14 @@ impl App {
             KeyCode::Home => self.table_first(),
             KeyCode::End => self.table_last(),
             KeyCode::PageDown => {
-                for _ in 0..20 { self.table_next(); }
+                for _ in 0..20 {
+                    self.table_next();
+                }
             }
             KeyCode::PageUp => {
-                for _ in 0..20 { self.table_previous(); }
+                for _ in 0..20 {
+                    self.table_previous();
+                }
             }
 
             // Sort
@@ -477,14 +499,16 @@ impl App {
     }
 
     fn kill_by_port(&mut self, port: u16) {
-        let pid = self.ports.iter().find(|p| p.local_port == port).and_then(|p| p.pid);
+        let pid = self
+            .ports
+            .iter()
+            .find(|p| p.local_port == port)
+            .and_then(|p| p.pid);
         match pid {
-            Some(pid) => {
-                match self.proc_collector.kill_process(pid) {
-                    Ok(()) => self.set_status(format!("Killed process on port {}", port)),
-                    Err(e) => self.set_status(format!("Failed: {}", e)),
-                }
-            }
+            Some(pid) => match self.proc_collector.kill_process(pid) {
+                Ok(()) => self.set_status(format!("Killed process on port {}", port)),
+                Err(e) => self.set_status(format!("Failed: {}", e)),
+            },
             None => self.set_status(format!("No process found on port {}", port)),
         }
     }
@@ -493,14 +517,26 @@ impl App {
         match self.view {
             View::ProcessTable => {
                 let len = self.filtered_processes().len();
-                if len == 0 { return; }
-                let i = self.process_table_state.selected().map(|i| (i + 1).min(len - 1)).unwrap_or(0);
+                if len == 0 {
+                    return;
+                }
+                let i = self
+                    .process_table_state
+                    .selected()
+                    .map(|i| (i + 1).min(len - 1))
+                    .unwrap_or(0);
                 self.process_table_state.select(Some(i));
             }
             View::PortTable => {
                 let len = self.filtered_ports().len();
-                if len == 0 { return; }
-                let i = self.port_table_state.selected().map(|i| (i + 1).min(len - 1)).unwrap_or(0);
+                if len == 0 {
+                    return;
+                }
+                let i = self
+                    .port_table_state
+                    .selected()
+                    .map(|i| (i + 1).min(len - 1))
+                    .unwrap_or(0);
                 self.port_table_state.select(Some(i));
             }
             _ => {}
@@ -510,11 +546,19 @@ impl App {
     fn table_previous(&mut self) {
         match self.view {
             View::ProcessTable => {
-                let i = self.process_table_state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
+                let i = self
+                    .process_table_state
+                    .selected()
+                    .map(|i| i.saturating_sub(1))
+                    .unwrap_or(0);
                 self.process_table_state.select(Some(i));
             }
             View::PortTable => {
-                let i = self.port_table_state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
+                let i = self
+                    .port_table_state
+                    .selected()
+                    .map(|i| i.saturating_sub(1))
+                    .unwrap_or(0);
                 self.port_table_state.select(Some(i));
             }
             _ => {}
@@ -533,11 +577,15 @@ impl App {
         match self.view {
             View::ProcessTable => {
                 let len = self.filtered_processes().len();
-                if len > 0 { self.process_table_state.select(Some(len - 1)); }
+                if len > 0 {
+                    self.process_table_state.select(Some(len - 1));
+                }
             }
             View::PortTable => {
                 let len = self.filtered_ports().len();
-                if len > 0 { self.port_table_state.select(Some(len - 1)); }
+                if len > 0 {
+                    self.port_table_state.select(Some(len - 1));
+                }
             }
             _ => {}
         }
@@ -556,8 +604,11 @@ impl App {
                         ProcessSortBy::Name => ProcessSortBy::Cpu,
                     };
                 }
-                self.set_status(format!("Sort: {:?} ({})", self.process_sort_by,
-                    if self.process_sort_asc { "asc" } else { "desc" }));
+                self.set_status(format!(
+                    "Sort: {:?} ({})",
+                    self.process_sort_by,
+                    if self.process_sort_asc { "asc" } else { "desc" }
+                ));
             }
             View::PortTable => {
                 if reverse {

@@ -1,6 +1,6 @@
 mod app;
-mod config;
 mod collectors;
+mod config;
 mod event;
 mod theme;
 mod types;

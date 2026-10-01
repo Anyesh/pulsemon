@@ -1,8 +1,8 @@
+use super::PortScanner;
+use crate::types::PortInfo;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use crate::types::PortInfo;
-use super::PortScanner;
 
 pub struct LinuxPortScanner;
 
@@ -43,7 +43,10 @@ fn parse_proc_net(path: &str, protocol: &str) -> Result<Vec<PortInfo>> {
         let (local_addr, local_port) = parse_hex_address(parts[1]);
         let (remote_addr, remote_port) = parse_hex_address(parts[2]);
         let state = parse_tcp_state(parts[3]);
-        let inode = parts.get(9).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let inode = parts
+            .get(9)
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
 
         ports.push(PortInfo {
             protocol: protocol.to_string(),

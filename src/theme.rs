@@ -20,9 +20,9 @@ pub const YELLOW: Color = Color::Rgb(220, 200, 100);
 pub const RED: Color = Color::Rgb(220, 100, 100);
 
 // Gauge colors — orange gradient
-pub const GAUGE_LOW: Color = Color::Rgb(100, 180, 140);    // soft teal-green
-pub const GAUGE_MID: Color = ORANGE;                        // orange
-pub const GAUGE_HIGH: Color = Color::Rgb(220, 80, 80);     // soft red
+pub const GAUGE_LOW: Color = Color::Rgb(100, 180, 140); // soft teal-green
+pub const GAUGE_MID: Color = ORANGE; // orange
+pub const GAUGE_HIGH: Color = Color::Rgb(220, 80, 80); // soft red
 pub const GAUGE_BG: Color = Color::Rgb(40, 40, 40);
 
 pub fn gauge_color(pct: f64) -> Color {
@@ -53,7 +53,10 @@ pub fn header_style() -> Style {
 }
 
 pub fn selected_style() -> Style {
-    Style::new().bg(ORANGE_DIM).fg(Color::Rgb(240, 240, 240)).add_modifier(Modifier::BOLD)
+    Style::new()
+        .bg(ORANGE_DIM)
+        .fg(Color::Rgb(240, 240, 240))
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn dim_style() -> Style {
