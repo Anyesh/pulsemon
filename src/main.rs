@@ -7,6 +7,7 @@ mod terminal;
 mod theme;
 mod types;
 mod ui;
+mod views;
 
 use std::time::Instant;
 

@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let make_header = |label: &str, active: bool| -> Cell<'static> {
         if active {
-            let arrow = if app.port_sort_asc {
+            let arrow = if app.port_view.sort_asc {
                 arrow_up
             } else {
                 arrow_down
@@ -34,12 +34,12 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let header = Row::new(vec![
-        make_header("Protocol", app.port_sort_by == PortSortBy::Protocol),
+        make_header("Protocol", app.port_view.sort_by == PortSortBy::Protocol),
         Cell::from(Span::styled("Local Address", theme::header_style())),
-        make_header("Port", app.port_sort_by == PortSortBy::Port),
+        make_header("Port", app.port_view.sort_by == PortSortBy::Port),
         Cell::from(Span::styled("Remote Address", theme::header_style())),
-        make_header("State", app.port_sort_by == PortSortBy::State),
-        make_header("PID", app.port_sort_by == PortSortBy::Pid),
+        make_header("State", app.port_view.sort_by == PortSortBy::State),
+        make_header("PID", app.port_view.sort_by == PortSortBy::Pid),
         Cell::from(Span::styled("Process", theme::header_style())),
     ])
     .height(1);
@@ -116,5 +116,5 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     .block(block)
     .row_highlight_style(theme::selected_style());
 
-    frame.render_stateful_widget(table, area, &mut app.port_table_state);
+    frame.render_stateful_widget(table, area, &mut app.port_view.table_state);
 }

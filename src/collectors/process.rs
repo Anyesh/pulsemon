@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use sysinfo::{Pid, System};
 
-use crate::types::{ProcessInfo, ProcessSortBy};
+use crate::types::ProcessInfo;
 
 pub struct ProcessCollector {
     sys: System,
@@ -17,9 +17,8 @@ impl ProcessCollector {
             .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     }
 
-    pub fn processes(&self, sort_by: &ProcessSortBy, ascending: bool) -> Vec<ProcessInfo> {
-        let mut procs: Vec<ProcessInfo> = self
-            .sys
+    pub fn processes(&self) -> Vec<ProcessInfo> {
+        self.sys
             .processes()
             .values()
             .map(|process| ProcessInfo {
@@ -35,26 +34,7 @@ impl ProcessCollector {
                     .collect::<Vec<_>>()
                     .join(" "),
             })
-            .collect();
-
-        procs.sort_by(|a, b| {
-            let ordering = match sort_by {
-                ProcessSortBy::Pid => a.pid.cmp(&b.pid),
-                ProcessSortBy::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                ProcessSortBy::Cpu => a
-                    .cpu_usage
-                    .partial_cmp(&b.cpu_usage)
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                ProcessSortBy::Memory => a.memory.cmp(&b.memory),
-            };
-            if ascending {
-                ordering
-            } else {
-                ordering.reverse()
-            }
-        });
-
-        procs
+            .collect()
     }
 
     pub fn kill_process(&self, pid: u32) -> Result<()> {

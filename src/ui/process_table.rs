@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let make_header = |label: &str, active: bool| -> Cell<'static> {
         if active {
-            let arrow = if app.process_sort_asc {
+            let arrow = if app.process_view.sort_asc {
                 arrow_up
             } else {
                 arrow_down
@@ -34,10 +34,10 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let header = Row::new(vec![
-        make_header("PID", app.process_sort_by == ProcessSortBy::Pid),
-        make_header("Name", app.process_sort_by == ProcessSortBy::Name),
-        make_header("CPU%", app.process_sort_by == ProcessSortBy::Cpu),
-        make_header("Memory", app.process_sort_by == ProcessSortBy::Memory),
+        make_header("PID", app.process_view.sort_by == ProcessSortBy::Pid),
+        make_header("Name", app.process_view.sort_by == ProcessSortBy::Name),
+        make_header("CPU%", app.process_view.sort_by == ProcessSortBy::Cpu),
+        make_header("Memory", app.process_view.sort_by == ProcessSortBy::Memory),
         Cell::from(Span::styled("Status", theme::header_style())),
         Cell::from(Span::styled("Command", theme::header_style())),
     ])
@@ -104,5 +104,5 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     .block(block)
     .row_highlight_style(theme::selected_style());
 
-    frame.render_stateful_widget(table, area, &mut app.process_table_state);
+    frame.render_stateful_widget(table, area, &mut app.process_view.table_state);
 }
