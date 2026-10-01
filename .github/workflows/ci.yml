@@ -31,7 +31,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact: pulsemon-linux-x86_64
             binary: target/x86_64-unknown-linux-gnu/release/pulsemon
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact: pulsemon-macos-x86_64
             binary: target/x86_64-apple-darwin/release/pulsemon
